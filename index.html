@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      (function () {
+        try {
+          var originalFetch = window.fetch ? window.fetch.bind(window) : undefined;
+          var currentFetch = originalFetch;
+          Object.defineProperty(window, 'fetch', {
+            configurable: true,
+            enumerable: true,
+            get: function () {
+              return currentFetch;
+            },
+            set: function (fn) {
+              if (typeof fn === 'function') {
+                currentFetch = fn;
+              }
+            }
+          });
+        } catch (e) {
+          // Ignore if descriptor is locked
+        }
+
+        window.addEventListener(
+          'error',
+          function (event) {
+            if (
+              (event.filename && event.filename.indexOf('chrome-extension://') !== -1) ||
+              (event.message && event.message.indexOf('Cannot set property fetch') !== -1)
+            ) {
+              event.stopImmediatePropagation();
+              event.preventDefault();
+              return false;
+            }
+          },
+          true
+        );
+
+        window.addEventListener(
+          'unhandledrejection',
+          function (event) {
+            var reason = event.reason && (event.reason.stack || event.reason.message || String(event.reason));
+            if (
+              reason &&
+              (reason.indexOf('chrome-extension://') !== -1 ||
+                reason.indexOf('Cannot set property fetch') !== -1)
+            ) {
+              event.stopImmediatePropagation();
+              event.preventDefault();
+              return false;
+            }
+          },
+          true
+        );
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#111111" />
+    <title>Webygram — Telegram Web Client</title>
+    <meta name="description" content="Real-time Telegram web client with natural voice changer, disappearing media vault, and privacy controls." />
+    <meta property="og:title" content="Webygram — Telegram Web Client" />
+    <meta property="og:description" content="Real-time Telegram web client with natural voice changer, disappearing media vault, and privacy controls." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body class="bg-canvas text-ink antialiased selection:bg-primary/30 overflow-hidden font-sans">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.tgplus-session.json
+.tgplus-vault/
+.tgplus-browser-profiles/
+.local/
+.vercel/
+github-upload*/
+github-upload*.zip

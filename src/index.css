@@ -1,0 +1,399 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-canvas: var(--tg-bg-main);
+  --color-surface: var(--tg-bg-panel);
+  --color-surface-low: var(--tg-surface-low);
+  --color-elevated: var(--tg-bg-elevated);
+  --color-hover: var(--tg-hover);
+  --color-ink: var(--tg-text);
+  --color-muted: var(--tg-muted);
+  --color-outline: var(--tg-border);
+  --color-primary: var(--tg-accent);
+  --color-primary-hover: var(--tg-accent-hover);
+  --color-on-primary: var(--tg-on-primary);
+  --color-primary-container: var(--tg-primary-container);
+  --color-on-container: var(--tg-on-container);
+  --color-danger: var(--tg-error);
+}
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --tg-bg-main: #111111;
+  --tg-bg-panel: #1D1D1D;
+  --tg-bg-elevated: #303030;
+  --tg-bubble-out: #2B5278;
+  --tg-bubble-out-border: #3A6896;
+  --tg-bubble-in: #182533;
+  --tg-bubble-in-border: #243447;
+  --tg-border: #0E1621;
+  --tg-accent: #EEEEEE;
+  --tg-accent-hover: #D4D4D4;
+  --tg-on-primary: #111111;
+  --tg-primary-text: #EEEEEE;
+  --tg-text: #F3F3F3;
+  --tg-muted: #BCBCBC;
+  --tg-border: #3A3A3A;
+  --tg-surface-low: #171717;
+  --tg-hover: #303030;
+  --tg-primary-container: #3e3e3e;
+  --tg-on-container: #eeeeee;
+  --tg-error: #E06C6C;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(127, 145, 164, 0.28);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(42, 171, 238, 0.5);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Native interaction feedback with visible keyboard navigation. */
+:focus-visible { outline: 2px solid var(--tg-accent); outline-offset: 3px; }
+button, a, input, textarea { -webkit-tap-highlight-color: transparent; }
+button, a { touch-action: manipulation; }
+button:disabled { cursor: default; }
+html, body, #root { height: 100%; margin: 0; }
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+body { overscroll-behavior: none; }
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tg-drawer-in {
+  from {
+    opacity: 0.6;
+    transform: translate3d(-100%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes tg-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes tg-slide-right {
+  from {
+    opacity: 0;
+    transform: translate3d(-16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-tg-drawer-in {
+  animation: tg-drawer-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-tg-pop-in {
+  animation: tg-pop-in 170ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-tg-slide-right {
+  animation: tg-slide-right 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-tg-drawer-in,
+  .animate-tg-pop-in,
+  .animate-tg-slide-right {
+    animation: none !important;
+  }
+}
+
+/* Dynamic Palette Surface & Bubble Classes */
+.tg-surface-main {
+  background-color: var(--tg-bg-main) !important;
+}
+
+.tg-surface-panel {
+  background-color: var(--tg-bg-panel) !important;
+}
+
+.tg-surface-elevated {
+  background-color: var(--tg-bg-elevated) !important;
+}
+
+.tg-bubble-out {
+  background-color: var(--tg-bubble-out);
+  border-color: var(--tg-bubble-out-border);
+}
+
+.tg-bubble-in {
+  background-color: var(--tg-bubble-in);
+  border-color: var(--tg-bubble-in-border);
+}
+
+/* Automatic palette adaptation for dark surfaces across the app */
+html.dark body,
+html.dark .dark\:bg-\[\#0E1621\],
+html.dark .dark\:bg-\[\#0B1221\],
+html.dark .dark\:bg-\[\#0A111F\] {
+  background-color: var(--tg-bg-main) !important;
+}
+
+html.dark .dark\:bg-\[\#17212B\],
+html.dark .dark\:bg-\[\#10192D\] {
+  background-color: var(--tg-bg-panel) !important;
+}
+
+html.dark .dark\:bg-\[\#202B36\],
+html.dark .dark\:bg-\[\#242F3D\],
+html.dark .dark\:bg-\[\#131E36\] {
+  background-color: var(--tg-bg-elevated) !important;
+}
+
+html.dark .dark\:bg-\[\#182533\] {
+  background-color: var(--tg-bubble-in) !important;
+}
+
+/* Global Accent Color Propagation (driven by --tg-accent & --tg-accent-hover) */
+.bg-\[\#2AABEE\],
+.bg-\[\#1F8BFF\] {
+  background-color: var(--tg-accent) !important;
+}
+
+.hover\:bg-\[\#229ED9\]:hover,
+.hover\:bg-\[\#1677E6\]:hover,
+.hover\:bg-\[\#2AABEE\]:hover,
+.hover\:bg-\[\#1F8BFF\]:hover {
+  background-color: var(--tg-accent-hover) !important;
+}
+
+.text-\[\#2AABEE\],
+.text-\[\#1F8BFF\] {
+  color: var(--tg-accent) !important;
+}
+
+.border-\[\#2AABEE\],
+.border-\[\#1F8BFF\] {
+  border-color: var(--tg-accent) !important;
+}
+
+.bg-\[\#2AABEE\]\/10,
+.bg-\[\#1F8BFF\]\/10 {
+  background-color: color-mix(in srgb, var(--tg-accent) 12%, transparent) !important;
+}
+
+.bg-\[\#1F8BFF\]\/15 {
+  background-color: color-mix(in srgb, var(--tg-accent) 16%, transparent) !important;
+}
+
+/* 1. Official Telegram Doodle Wallpaper (Light + Dark) */
+.chat-pattern-tg {
+  background-color: var(--tg-bg-main, #dce7dc);
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(42, 171, 238, 0.08), transparent 46%),
+    radial-gradient(circle at 82% 76%, rgba(79, 174, 78, 0.09), transparent 50%),
+    url("data:image/svg+xml,%3Csvg width='120' height='120' viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%2364748b' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round' opacity='0.18'%3E%3Cpath d='M18 22l14-6-6 14-3-5-5-3z'/%3E%3Ccircle cx='78' cy='24' r='7'/%3E%3Cpath d='M75 24h6M78 21v6'/%3E%3Cpath d='M26 74c0-4 3.5-7 8-7s8 3 8 7-3.5 7-8 7l-4 3v-4c-2.5-1.2-4-3.4-4-6z'/%3E%3Cpath d='M84 72l3 6 6 1-4.5 4.2 1.2 6.3-5.7-3-5.7 3 1.2-6.3L75 79l6-1 3-6z'/%3E%3Cpath d='M52 46c2.5-3 7-3 9.5 0s2.5 7.5 0 10.5L52 66l-9.5-9.5c-2.5-3-2.5-7.5 0-10.5s7-3 9.5 0z'/%3E%3Cpath d='M16 104h14M20 100v8'/%3E%3Ccircle cx='102' cy='102' r='6'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 100% 100%, 100% 100%, 138px 138px;
+}
+
+.dark .chat-pattern-tg {
+  background-color: var(--tg-bg-main, #0E1621);
+  background-image:
+    radial-gradient(circle at 20% 25%, rgba(42, 171, 238, 0.055), transparent 45%),
+    radial-gradient(circle at 80% 75%, rgba(30, 59, 88, 0.09), transparent 50%),
+    url("data:image/svg+xml,%3Csvg width='120' height='120' viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%235B7A9C' stroke-width='1.35' stroke-linecap='round' stroke-linejoin='round' opacity='0.16'%3E%3Cpath d='M18 22l14-6-6 14-3-5-5-3z'/%3E%3Ccircle cx='78' cy='24' r='7'/%3E%3Cpath d='M75 24h6M78 21v6'/%3E%3Cpath d='M26 74c0-4 3.5-7 8-7s8 3 8 7-3.5 7-8 7l-4 3v-4c-2.5-1.2-4-3.4-4-6z'/%3E%3Cpath d='M84 72l3 6 6 1-4.5 4.2 1.2 6.3-5.7-3-5.7 3 1.2-6.3L75 79l6-1 3-6z'/%3E%3Cpath d='M52 46c2.5-3 7-3 9.5 0s2.5 7.5 0 10.5L52 66l-9.5-9.5c-2.5-3-2.5-7.5 0-10.5s7-3 9.5 0z'/%3E%3Cpath d='M16 104h14M20 100v8'/%3E%3Ccircle cx='102' cy='102' r='6'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 100% 100%, 100% 100%, 136px 136px;
+}
+
+/* 2. Cosmic Starry Sky Wallpaper (Light + Dark) */
+.chat-wallpaper-starry {
+  background-color: var(--tg-bg-main, #e6ebee);
+  background-image:
+    radial-gradient(1.5px 1.5px at 24px 36px, rgba(59, 130, 246, 0.32), transparent),
+    radial-gradient(1.2px 1.2px at 84px 72px, rgba(99, 102, 241, 0.28), transparent),
+    radial-gradient(1.5px 1.5px at 142px 28px, rgba(14, 165, 233, 0.3), transparent),
+    radial-gradient(2px 2px at 190px 115px, rgba(59, 130, 246, 0.24), transparent),
+    radial-gradient(circle at 15% 20%, rgba(59, 130, 246, 0.1), transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(139, 92, 246, 0.08), transparent 50%);
+  background-size: 220px 160px, 220px 160px, 220px 160px, 220px 160px, 100% 100%, 100% 100%;
+}
+
+.dark .chat-wallpaper-starry {
+  background-color: var(--tg-bg-main, #090D16);
+  background-image:
+    radial-gradient(1.5px 1.5px at 24px 36px, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1px 1px at 84px 72px, rgba(147, 197, 253, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 142px 28px, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(2px 2px at 190px 115px, rgba(56, 189, 248, 0.4), transparent),
+    radial-gradient(circle at 15% 20%, rgba(59, 130, 246, 0.12), transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(139, 92, 246, 0.12), transparent 50%);
+  background-size: 220px 160px, 220px 160px, 220px 160px, 220px 160px, 100% 100%, 100% 100%;
+}
+
+/* 3. Northern Aurora Mesh Wallpaper (Light + Dark) */
+.chat-wallpaper-aurora {
+  background-color: var(--tg-bg-main, #e6ebee);
+  background-image:
+    radial-gradient(at 12% 18%, rgba(42, 171, 238, 0.2) 0px, transparent 52%),
+    radial-gradient(at 88% 22%, rgba(16, 185, 129, 0.17) 0px, transparent 52%),
+    radial-gradient(at 50% 85%, rgba(139, 92, 246, 0.14) 0px, transparent 55%);
+}
+
+.dark .chat-wallpaper-aurora {
+  background-color: var(--tg-bg-main, #0B1320);
+  background-image:
+    radial-gradient(at 12% 18%, rgba(42, 171, 238, 0.18) 0px, transparent 50%),
+    radial-gradient(at 88% 22%, rgba(16, 185, 129, 0.15) 0px, transparent 50%),
+    radial-gradient(at 50% 85%, rgba(139, 92, 246, 0.16) 0px, transparent 55%);
+}
+
+/* 4. Architectural Grid Wallpaper (Light + Dark) */
+.chat-pattern-grid {
+  background-color: var(--tg-bg-main, #e6ebee);
+  background-image:
+    linear-gradient(to right, rgba(42, 171, 238, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(42, 171, 238, 0.1) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.dark .chat-pattern-grid {
+  background-color: var(--tg-bg-main, #0E1621);
+  background-image:
+    linear-gradient(to right, rgba(42, 171, 238, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(42, 171, 238, 0.055) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* 5. Minimal Architectural Dots Wallpaper (Light + Dark) */
+.chat-wallpaper-dots {
+  background-color: var(--tg-bg-main, #e6ebee);
+  background-image: radial-gradient(rgba(15, 23, 42, 0.14) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.dark .chat-wallpaper-dots {
+  background-color: var(--tg-bg-main, #0E1621);
+  background-image: radial-gradient(rgba(148, 163, 184, 0.16) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* 6. Pure Solid Wallpaper */
+.chat-wallpaper-plain {
+  background-color: var(--tg-bg-main, #e6ebee);
+  background-image: none;
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 60 FPS Virtualization & GPU Compositing for Chat Timeline and Dialog List */
+.tg-message-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 74px;
+  contain: layout style;
+}
+
+.tg-chat-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 66px;
+  contain: layout style;
+}
+
+.tg-scroll-smooth {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+
+/* Keep a readable conversation width on large displays. */
+.tg-timeline { padding-inline: max(12px, calc((100% - 860px) / 2)); overflow-anchor: auto; }
+.tg-chat-row { min-height: 72px; }
+@media (max-width: 767px) {
+  textarea, input[type="text"], input[type="search"], input[type="tel"], input[type="password"] { font-size: 16px !important; }
+  .tg-composer { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Mobile primary navigation stays consistent across root screens. */
+.tg-mobile-nav { padding-bottom: env(safe-area-inset-bottom); }
+@media (max-width: 1023px) {
+  .tg-root-tabs { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 639px) {
+  .tg-fullscreen-dialog { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .tg-composer { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+}
+
+/* Panels use the phone's full screen; only their content region scrolls. */
+@media (max-width: 639px) {
+  .tg-mobile-panel { padding: 0; backdrop-filter: none; }
+  .tg-mobile-panel > div:first-child {
+    width: 100%; max-width: none; height: 100dvh; max-height: 100dvh;
+    border: 0; border-radius: 0; min-height: 0;
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tg-mobile-panel > div > div:not(.flex-1) { flex-shrink: 0; }
+  .tg-mobile-panel .overflow-y-auto { min-height: 0; overscroll-behavior-y: contain; }
+  .tg-mobile-panel button:not([role="switch"]) { min-height: 44px; }
+  .tg-mobile-panel button:has(> svg:only-child) { min-width: 44px; }
+  .tg-mobile-panel input:not([type="range"]):not([type="checkbox"]), .tg-mobile-panel select { min-height: 44px; }
+  .tg-media-viewer { padding: 0; background: #000; }
+  .tg-media-shell { height: 100dvh; max-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .tg-media-toolbar { position: relative; border: 0; border-radius: 0; margin: 0; padding: 10px 12px; flex-shrink: 0; background: #111 !important; color: #fff; }
+  .tg-media-toolbar > div:first-child { width: 100%; padding-right: 48px; min-height: 40px; }
+  .tg-media-toolbar > div:first-child > span { font-size: 14px; }
+  .tg-media-actions { width: 100%; flex-wrap: wrap; gap: 6px; }
+  .tg-media-actions button { min-height: 44px; min-width: 44px; justify-content: center; color: #fff; }
+  .tg-media-actions button { background-color: #24282d; }
+  .tg-media-actions button[aria-label="Close media viewer"] { position: absolute; right: 8px; top: 8px; }
+  .tg-media-stage { max-height: none; min-height: 0; border: 0; border-radius: 0; }
+  .tg-media-stage img:not(.max-w-none), .tg-media-stage video { max-height: calc(100dvh - 150px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); border-radius: 0; }
+  .tg-chat-header { padding-top: env(safe-area-inset-top); }
+  .tg-chat-header > div:first-child { padding: 6px 8px; gap: 4px; }
+  .tg-chat-header > div:first-child button { min-height: 44px; min-width: 40px; }
+  .tg-studio-header { position: relative; padding-right: 52px; }
+  .tg-studio-header button[aria-label="Close voice studio"] { position: absolute; top: 8px; right: 8px; }
+  .tg-navigation-drawer > div { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .tg-navigation-drawer button { min-height: 44px; }
+}

@@ -1,0 +1,16 @@
+.git
+.local
+.aistudio
+.vercel
+.tgplus-session.json
+.tgplus-vault
+.tgplus-browser-profiles
+.env
+.env.local
+.env.production
+.env.*
+node_modules
+dist
+build
+github-upload*
+*.log
