@@ -443,13 +443,17 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
 
     // Adaptive Female F0 calibration: gently guides real speech into natural female range without chipmunking
     let targetRatio = pitchRatio;
+    // Use a slowly learned baseline so conversion keeps the speaker\'s intonation.
+    if (voicedConfidence > 0.6 && this.detectedF0 >= 72 && this.detectedF0 <= 300) {
+      this.sourceBaselineHz = this.sourceBaselineHz ? this.sourceBaselineHz * 0.99 + this.detectedF0 * 0.01 : this.detectedF0;
+    }
     if (
       femaleCalibration > 0.5 &&
       voicedConfidence > 0.45 &&
       this.detectedF0 >= 72 &&
       this.detectedF0 <= 255
     ) {
-      const idealRatio = femaleTargetHz / this.detectedF0;
+      const idealRatio = femaleTargetHz / (this.sourceBaselineHz || this.detectedF0);
       const minBound = Math.max(1.12, pitchRatio * 0.84);
       const maxBound = Math.min(2.12, pitchRatio * 1.18);
       const clampedIdeal = Math.max(minBound, Math.min(maxBound, idealRatio));
@@ -682,6 +686,7 @@ export class VoiceChangerEngine {
   private highpassFilter: BiquadFilterNode | null = null;
   private pitchWorkletNode: AudioWorkletNode | null = null;
   private workletLoaded = false;
+  private processorFailed = false;
 
   // Multi-band Vocal Tract Conditioning & De-Esser
   private chestCutFilter: BiquadFilterNode | null = null;
@@ -823,14 +828,15 @@ export class VoiceChangerEngine {
         throw new Error('Microphone access requires HTTPS or localhost in this browser.');
       }
 
-      if (!this.audioContext) {
+      if (!this.audioContext || this.audioContext.state === "closed") {
+        this.workletLoaded = false; this.processorFailed = false; this.destinationNode = null; this.isProcessing = false;
         const AudioCtx =
           window.AudioContext ||
           (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         this.audioContext = new AudioCtx({ latencyHint: 'interactive' });
       }
 
-      if (this.audioContext.state === 'suspended') {
+      if (this.audioContext.state !== 'running') {
         await this.audioContext.resume();
       }
 
@@ -857,6 +863,7 @@ export class VoiceChangerEngine {
       this.buildDspGraph();
       this.applyCurrentSettings();
 
+      if (this.audioContext.state !== "running") throw new Error("Microphone audio is paused. Tap Record or enable the voice changer again.");
       this.state.isReady = true;
       if (this.state.enabled && !this.pitchWorkletNode) {
         this.state.enabled = false;
@@ -867,7 +874,7 @@ export class VoiceChangerEngine {
     } catch (err) {
       const msg = (err as Error)?.message || 'Could not access microphone.';
       this.state.isReady = false;
-      this.state.lastError = msg.includes('Permission') || msg.includes('NotAllowed')
+      this.state.lastError = (err as Error).name === 'NotAllowedError' || msg.includes('Permission') || msg.includes('NotAllowed')
         ? 'Microphone permission blocked. Allow mic access in browser settings.'
         : msg;
       this.notify(false);
@@ -876,10 +883,10 @@ export class VoiceChangerEngine {
   }
 
   public async ensureReadyForCapture(): Promise<boolean> {
-    if (!this.audioContext || !this.hasLiveMic() || !this.isProcessing) {
+    if (!this.audioContext || this.audioContext.state === "closed" || !this.hasLiveMic() || !this.isProcessing) {
       return await this.initialize();
     }
-    if (this.audioContext.state === 'suspended') {
+    if (this.audioContext.state !== 'running') {
       try {
         await this.audioContext.resume();
       } catch {
@@ -887,7 +894,7 @@ export class VoiceChangerEngine {
       }
     }
     this.applyCurrentSettings();
-    return this.hasLiveMic();
+    return this.hasLiveMic() && this.audioContext.state === "running";
   }
 
   private async acquireMicrophone(): Promise<MediaStream> {
@@ -907,7 +914,9 @@ export class VoiceChangerEngine {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: baseAudio });
-    } catch {
+    } catch (error) {
+      if (!["OverconstrainedError", "NotFoundError"].includes((error as Error).name)) throw error;
+      this.state.selectedMicId = "default";
       // Retry without exact deviceId in case saved device was unplugged
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
@@ -971,12 +980,17 @@ export class VoiceChangerEngine {
       this.highpassFilter.type = 'highpass';
       this.highpassFilter.frequency.value = 110;
 
-      if (this.workletLoaded) {
+      if (this.workletLoaded && !this.processorFailed) {
         this.pitchWorkletNode = new AudioWorkletNode(this.audioContext, 'formant-phase-vocoder-processor', {
           numberOfInputs: 1,
           numberOfOutputs: 1,
           outputChannelCount: [1],
         });
+        this.pitchWorkletNode.onprocessorerror = () => {
+          this.state.enabled = false; this.state.lastError = "Voice effects stopped. Your original mic is active; tap Power to retry.";
+          this.processorFailed = true;
+          this.sourceNode?.disconnect(); this.buildDspGraph(); this.applyCurrentSettings(); this.notify(false);
+        };
         this.pitchWorkletNode.port.onmessage = (ev) => {
           const { inputHz, outputHz } = ev.data || {};
           if (typeof inputHz === 'number' && typeof outputHz === 'number') {
@@ -1172,10 +1186,13 @@ export class VoiceChangerEngine {
 
   public async setEnabled(enabled: boolean) {
     this.state.enabled = enabled;
-    if (enabled && (!this.isProcessing || !this.hasLiveMic())) {
+    if (enabled && this.processorFailed && this.isProcessing) {
+      this.processorFailed = false; this.sourceNode?.disconnect(); this.buildDspGraph(); this.state.lastError = null;
+    }
+    if (enabled && (!this.isProcessing || !this.hasLiveMic() || this.audioContext?.state === "closed" || !this.workletLoaded)) {
       await this.initialize();
-    } else if (enabled && this.audioContext?.state === 'suspended') {
-      await this.audioContext.resume().catch(() => {});
+    } else if (enabled && this.audioContext?.state !== 'running') {
+      await this.audioContext?.resume().catch(() => {});
     }
     if (enabled && (!this.state.isReady || !this.pitchWorkletNode)) {
       this.state.enabled = false;

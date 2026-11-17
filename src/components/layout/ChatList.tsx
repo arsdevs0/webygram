@@ -53,7 +53,7 @@ import { SearchResults } from '../chat/SearchResults';
 import type { MessageSearchHit } from '../../types/telegram';
 import { Avatar } from '../common/Avatar';
 
-export type BottomNavTab = 'chats' | 'channels' | 'vault' | 'settings' | 'deleted';
+export type BottomNavTab = 'chats' | 'channels' | 'vault' | 'settings' | 'deleted' | 'contacts' | 'you';
 
 interface Props {
   chats: TelegramChat[];
@@ -74,6 +74,11 @@ interface Props {
   onOpenLoginModal: () => void;
   onOpenMyProfile?: () => void;
   onOpenCallsHub?: () => void;
+  onOpenData?: () => void;
+  onOpenCategory?: (category: "privacy" | "devices" | "notifications") => void;
+  onPowerSaving?: () => void;
+  powerSaving?: boolean;
+  onLogout?: () => Promise<void>;
   onOpenVoiceStudio?: () => void;
   activeBottomTab: BottomNavTab;
   onSelectBottomTab: (tab: BottomNavTab) => void;
@@ -100,6 +105,7 @@ export const ChatList: React.FC<Props> = React.memo(({
   onOpenLoginModal,
   onOpenMyProfile,
   onOpenCallsHub,
+  onOpenData, onOpenCategory, onPowerSaving, powerSaving, onLogout,
   onOpenVoiceStudio,
   activeBottomTab,
   onSelectBottomTab,
@@ -708,11 +714,13 @@ export const ChatList: React.FC<Props> = React.memo(({
         </div>
       ) : (
         <>
-          {telegramNavigation && <header className="tg-telegram-list-header">
-            <button type="button" aria-label={searchQuery || showSearchBar ? 'Back to chats' : 'Open navigation menu'} aria-expanded={showHamburgerDrawer} className="tg-icon-button" onClick={() => { if (searchQuery || showSearchBar) { setSearchQuery(''); setShowSearchBar(false); } else setShowHamburgerDrawer(true); }}>
-              {searchQuery || showSearchBar ? <ArrowLeft /> : <Menu />}
+          {telegramNavigation && <header className="tg-telegram-list-header tg-next-header">
+            <button type="button" aria-label={searchQuery || showSearchBar ? "Back to chats" : "Open account menu"} aria-expanded={showHamburgerDrawer} className="tg-icon-button tg-header-avatar" onClick={() => { if (searchQuery || showSearchBar) { setSearchQuery(""); setShowSearchBar(false); } else setShowHamburgerDrawer(true); }}>
+              {searchQuery || showSearchBar ? <ArrowLeft /> : <Avatar src={currentUser?.avatarUrl} title={currentUser?.firstName || "You"} id={currentUser?.id || "me"} size="sm" />}
             </button>
-            <label className="tg-telegram-search"><Search className="w-5 h-5 shrink-0" /><input type="search" aria-label="Search Telegram" placeholder="Search" value={searchQuery} onChange={e => { setSearchQuery(e.target.value); setShowSearchBar(Boolean(e.target.value.trim())); }} />{isLoadingDialogs && <Loader2 className="w-4 h-4 animate-spin" />}</label>
+            {showSearchBar || searchQuery ? <label className="tg-telegram-search"><Search className="w-5 h-5 shrink-0" /><input autoFocus type="search" aria-label="Search Telegram" placeholder="Search" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></label> : <h1>Webygram</h1>}
+            {isLoadingDialogs && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+            {!showSearchBar && !searchQuery && <><button type="button" aria-label="Search Telegram" className="tg-icon-button" onClick={() => setShowSearchBar(true)}><Search /></button><button type="button" aria-label="Change appearance" className="tg-icon-button" onClick={onOpenModSettings}><Palette /></button></>}
           </header>}
           {!telegramNavigation && <>
           {/* Optional Flow header */}
@@ -1128,12 +1136,13 @@ export const ChatList: React.FC<Props> = React.memo(({
         user={userSession} name={userFullName} isConnected={isConnected} night={isDarkTheme}
         onClose={() => setShowHamburgerDrawer(false)} onProfile={() => onOpenMyProfile?.()}
         onNewGroup={() => onCreateChat?.('group')} onNewChannel={() => onCreateChat?.('channel')}
-        onContacts={() => { setShowNewMessageModal(true); setNewMessageQuery(''); setDirectError(null); }}
+        onContacts={() => onSelectBottomTab('contacts')}
         onCalls={() => onOpenCallsHub?.()} onSaved={() => { const saved = chats.find(c => c.type === 'saved'); if (saved) onSelectChat(saved.id); else onOpenChatByLink?.('me'); }}
         onArchive={() => setIsArchiveViewOpen(true)} onSettings={() => onSelectBottomTab('settings')}
         onNight={toggleNightMode} onLogin={onOpenLoginModal} onVault={() => onSelectBottomTab('vault')}
         onDeleted={() => onSelectBottomTab('deleted')} onMods={onOpenAyuGramSettings}
         onVoice={() => onOpenVoiceStudio?.()} onAppearance={onOpenModSettings}
+        onDevices={() => onOpenCategory?.("devices")} onPrivacy={() => onOpenCategory?.("privacy")} onNotifications={() => onOpenCategory?.("notifications")} onData={onOpenData} onPowerSaving={onPowerSaving} powerSaving={powerSaving} onLogout={onLogout}
         onFolders={() => onOpenFolderManager?.()} onChannels={() => onSelectBottomTab('channels')}
       />}
       {/* Optional Flow navigation drawer */}
@@ -1629,4 +1638,3 @@ export const ChatList: React.FC<Props> = React.memo(({
     </div>
   );
 });
-

@@ -3,6 +3,7 @@ import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 import { initializeBrowserSession } from './services/browserSession';
 import './index.css';
 import './flow-design.css';
+import './telegram-next.css';
 
 const root = createRoot(document.getElementById('root')!);
 root.render(<div role="status" className="h-dvh flex items-center justify-center bg-canvas text-ink">Opening your Webygram…</div>);

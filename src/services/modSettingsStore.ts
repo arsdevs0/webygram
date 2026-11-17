@@ -1,3 +1,4 @@
+import { modernTelegramColors } from '../themes/modernTelegram';
 import { ModSettings, ColorPalette, AccentColor } from '../types/modSettings';
 import { FLOW_PALETTES } from '../themes/flowPalettes';
 import { findFlowPalette, resolveFlowPalette, readableAccent, readableForeground, mixColor } from '../themes/themeTokens';
@@ -227,12 +228,17 @@ class ModSettingsStore {
   public getActivePaletteTokens(): PaletteThemeTokens {
     const flow = findFlowPalette(this.settings.colorPalette);
     if (flow) return resolveFlowPalette(flow, this.settings.themeMode);
+    if (['night-blue', 'daylight-classic', 'amoled-black'].includes(this.settings.colorPalette)) {
+      const base = COLOR_PALETTES.find(p => p.id === this.settings.colorPalette) || COLOR_PALETTES[0];
+      return { ...base, ...modernTelegramColors(this.settings.themeMode) };
+    }
     return (
       COLOR_PALETTES.find((p) => p.id === this.settings.colorPalette) || COLOR_PALETTES[0]
     );
   }
 
   public getActiveAccentHex(): string {
+    if (this.settings.accentColor === 'telegram-blue' && ['night-blue', 'daylight-classic', 'amoled-black'].includes(this.settings.colorPalette)) return this.getActivePaletteTokens().primary!;
     if (this.settings.accentColor === 'theme') return this.getActivePaletteTokens().primary || '#2AABEE';
     return ACCENT_COLORS[this.settings.accentColor]?.hex || '#2AABEE';
   }
@@ -313,6 +319,7 @@ class ModSettingsStore {
     root.setAttribute('data-palette', pal.id);
     const interfaceStyle = pal.id.startsWith('flow-') ? 'flow' : 'telegram';
     root.setAttribute('data-interface', interfaceStyle);
+    root.setAttribute('data-layout', interfaceStyle === 'telegram' ? 'telegram-next' : 'flow');
     root.setAttribute('data-navigation', this.settings.navigationStyle === 'auto' ? interfaceStyle : this.settings.navigationStyle);
     root.setAttribute('data-accent', this.settings.accentColor);
     root.setAttribute('data-bubble-style', this.settings.bubbleStyle || 'telegram');

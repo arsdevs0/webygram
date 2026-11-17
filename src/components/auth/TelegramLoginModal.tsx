@@ -18,6 +18,7 @@ import { soundEffects } from '../../services/soundEffects';
 
 interface Props {
   isOpen: boolean;
+  initialTab?: 'qr' | 'phone';
   onClose: () => void;
   onLoginSuccess: () => void;
 }
@@ -44,8 +45,8 @@ api_hash = "YOUR_API_HASH"
 with TelegramClient(StringSession(), api_id, api_hash) as client:
     print(client.session.save())`;
 
-export const TelegramLoginModal: React.FC<Props> = ({ isOpen, onClose, onLoginSuccess }) => {
-  const [activeTab, setActiveTab] = useState<'qr' | 'phone' | 'session'>('qr');
+export const TelegramLoginModal: React.FC<Props> = ({ isOpen, onClose, onLoginSuccess, initialTab = "qr" }) => {
+  const [activeTab, setActiveTab] = useState<'qr' | 'phone' | 'session'>(initialTab);
   const [step, setStep] = useState<'phone' | 'code'>('phone');
 
   const [countryCode, setCountryCode] = useState('+91');
@@ -493,6 +494,9 @@ export const TelegramLoginModal: React.FC<Props> = ({ isOpen, onClose, onLoginSu
                   </span>
                   <input
                     type="tel"
+                    aria-label="Phone number"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
                     value={phoneDigits}
                     onChange={(e) => setPhoneDigits(e.target.value)}
                     placeholder="9876543210"

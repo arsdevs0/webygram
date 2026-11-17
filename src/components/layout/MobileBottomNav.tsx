@@ -1,26 +1,15 @@
 import React from 'react';
-import { MessageSquare, Radio, FolderArchive, Settings } from 'lucide-react';
+import { MessageCircle, UsersRound, Radio, FolderArchive, Settings, UserRound } from 'lucide-react';
+import { Avatar } from '../common/Avatar';
 import type { BottomNavTab } from './ChatList';
-
-const tabs = [
-  { id: 'chats', label: 'Chats', Icon: MessageSquare },
-  { id: 'channels', label: 'Channels', Icon: Radio },
-  { id: 'vault', label: 'Vault', Icon: FolderArchive },
-  { id: 'settings', label: 'Settings', Icon: Settings },
-] as const;
-
-export function MobileBottomNav({ active, unread, onSelect }: {
-  active: BottomNavTab; unread: number; onSelect: (tab: BottomNavTab) => void;
-}) {
-  return <nav aria-label="Mobile navigation" className="tg-mobile-nav fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 lg:hidden">
-    {tabs.map(({ id, label, Icon }) => <button key={id} type="button" aria-label={label}
-      aria-current={active === id ? 'page' : undefined} onClick={() => onSelect(id)}
-      className={`flex min-h-16 flex-col items-center justify-center gap-1 active:bg-hover dark:active:bg-hover ${active === id ? 'text-primary' : 'text-muted dark:text-muted'}`}>
-      <span className={`relative rounded-full px-4 py-1 ${active === id ? 'bg-primary/10' : ''}`}>
-        <Icon className="h-5 w-5" strokeWidth={active === id ? 2.3 : 1.8} />
-        {id === 'chats' && unread > 0 && <span className="absolute -right-1 -top-0.5 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-white">{unread > 99 ? '99+' : unread}</span>}
-      </span>
-      <span className="text-[11px] font-medium leading-none">{label}</span>
+import type { TelegramUser } from '../../types/telegram';
+export function MobileBottomNav({ active, unread, onSelect, modern = true, user }: { active: BottomNavTab; unread: number; onSelect: (tab: BottomNavTab) => void; modern?: boolean; user?: TelegramUser }) {
+  const tabs = modern ? [{ id: 'chats', label: 'Chats', Icon: MessageCircle }, { id: 'contacts', label: 'Contacts', Icon: UsersRound }, { id: 'settings', label: 'Settings', Icon: Settings }, { id: 'you', label: 'You', Icon: UserRound }] as const
+    : [{ id: 'chats', label: 'Chats', Icon: MessageCircle }, { id: 'channels', label: 'Channels', Icon: Radio }, { id: 'vault', label: 'Vault', Icon: FolderArchive }, { id: 'settings', label: 'Settings', Icon: Settings }] as const;
+  return <nav aria-label="Mobile navigation" className={'tg-mobile-nav fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 lg:hidden ' + (modern ? 'tg-next-bottom-nav' : '')}>
+    {tabs.map(({ id, label, Icon }) => <button key={id} type="button" aria-label={label} aria-current={active === id ? 'page' : undefined} onClick={() => onSelect(id)} className="tg-bottom-tab">
+      <span className="tg-bottom-icon">{id === 'you' && user ? <Avatar src={user.avatarUrl} title={user.firstName} id={user.id} size="sm" /> : <Icon />}
+        {id === 'chats' && unread > 0 && <span className="tg-bottom-badge">{unread > 99 ? '99+' : unread}</span>}</span><span>{label}</span>
     </button>)}
   </nav>;
 }

@@ -14,12 +14,14 @@ export async function convertBrowserVoice(input: Uint8Array, _extension: string,
       const samples = audio.getChannelData(channel);
       for (let index = 0; index < mono.length; index++) mono[index] += samples[index] / audio.numberOfChannels;
     }
-    const oggBuffer = await encodeOpus(mono, audio.sampleRate);
+    let bitRate=64000;
+    try { if (JSON.parse(localStorage.getItem('tg_plus_mod_settings_v2') || '{}').highQualityVoiceNotes === false) bitRate=32000; } catch { /* Default to the higher quality when preferences are unavailable. */ }
+    const oggBuffer = await encodeOpus(mono, audio.sampleRate, bitRate);
     return { oggBuffer, duration: Math.max(1, Math.round(audio.duration)), waveform: Buffer.alloc(0) };
   } finally { await context.close(); }
 }
 
-export function encodeOpus(samples: Float32Array, sampleRate: number): Promise<Buffer> {
+export function encodeOpus(samples: Float32Array, sampleRate: number, bitRate = 32000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(encoderUrl);
     const pages: Buffer[] = [];
@@ -40,7 +42,7 @@ export function encodeOpus(samples: Float32Array, sampleRate: number): Promise<B
       }
     };
     worker.postMessage({ command: 'init', originalSampleRate: sampleRate, encoderSampleRate: 48000,
-      numberOfChannels: 1, encoderApplication: 2048, encoderBitRate: 32000, encoderComplexity: 5,
+      numberOfChannels: 1, encoderApplication: 2048, encoderBitRate: bitRate, encoderComplexity: 5,
       bufferLength: 4096, encoderFrameSize: 20, maxFramesPerPage: 40, resampleQuality: 3 });
   });
 }

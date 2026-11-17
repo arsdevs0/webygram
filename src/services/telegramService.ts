@@ -2871,6 +2871,14 @@ export class TelegramService {
     return this.setUserBlocked(userId, blocked);
   }
 
+  public async getContacts(signal?: AbortSignal): Promise<UserProfileInfo[]> {
+    const res = await fetch('/api/tg/contacts', { signal });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not load contacts.');
+    if (!Array.isArray(data.contacts)) throw new Error('Contact list could not be read. Please retry.');
+    return data.contacts;
+  }
+
   public async getUserProfile(
     userId: string,
     chatId?: string,

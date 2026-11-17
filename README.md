@@ -1,6 +1,6 @@
 # Webygram
 
-Telegram web client with Original Telegram appearance and navigation, optional Flow themes, chat/media search, local vault, deleted-message history and voice tools.
+Telegram web client with the new Telegram-inspired layout in light and dark themes, mobile navigation, chat/media search, local vault, deleted-message history, voice tools and native private calls.
 
 ## Deploy on Vercel
 
@@ -29,13 +29,17 @@ Keep one app tab open, connected and awake for local auto-save, anti-delete, aut
 
 Forwarding has a recipient picker and preview with sender-name/caption controls, comments, silent sending and scheduling. Caption removal also hides sender names, as Telegram requires. Partial retries preserve delivered destinations and Telegram random IDs during the same app/engine session.
 
-Browser/device Back and Escape close the current menu or panel, then return from the chat to the list. At the root, Back can leave the app. Original Telegram uses inline search, folder tabs, a main menu and a desktop settings sidebar; Flow navigation remains selectable.
+Browser/device Back and Escape close the current menu or panel, then return from the chat to the list. At the root, Back can leave the app. The mobile bar has Chats, Contacts, Settings and You; the account sheet, grouped settings and pill folders use the requested new layout in both themes. Flow themes remain selectable.
 
 ## Appearance and audio
 
-Original Telegram is the default. The previous design rollout is migrated back once while preserving mod preferences. Flow themes remain selectable. Navigation stays available; Appearance reset restores Original Telegram.
+The new Telegram-inspired light/dark design is the default. Existing mod preferences remain available. Appearance reset restores this default.
 
-Native Telegram call audio transport is **not implemented**. Browser microphone/tab recording and voice effects are separate features and depend on browser permissions/support. Voice notes are encoded to OGG/Opus locally; unsupported input conversion falls back to an audio attachment using its actual format.
+Native **private Telegram calls** use Telegram's DH key exchange, verified fingerprints, encrypted signaling and WebRTC media. Voice effects process the microphone on the user's device before sending it to the other caller. Presets can be changed during a call or recording. Group-call transport remains unsupported.
+
+Local effects combine pitch, independent formant shaping, speech calibration, consonant preservation and dynamics. They do not install a neural voice model or guarantee an indistinguishable human voice on every mobile. RVC/Seed-VC GitHub options were reviewed; realtime local neural conversion depends on device/model support and cannot be promised across all phones. See [w-okada](https://github.com/w-okada/voice-changer), [Seed-VC](https://github.com/Plachtaa/seed-vc), [browser RVC runtime](https://github.com/moyue23/rvc-web-runtime) and [RVC WebGPU](https://github.com/ouor/rvc-webgpu).
+
+Use HTTPS and allow the microphone; camera permission is required for video. Keep the browser awake. Mobile browsers can suspend audio in the background or when the screen locks. Speaker controls playback; browser support determines physical earpiece/output routing. Voice notes are encoded to OGG/Opus locally; unsupported conversion falls back to an audio attachment using its actual format. Failed sends retain the recording for playback, Retry or Discard.
 
 ## Checks
 
@@ -51,3 +55,20 @@ npm run build:web
 ## Optional local Node host
 
 The previous gateway remains available with `npm run dev`, or `npm run build` followed by `npm start`. Its private files stay in the workspace and are excluded from GitHub exports. This mode has separate server-side storage and is not the Vercel setup. `npm run test:integration` checks its browser-profile isolation using disposable data.
+
+## Mobile UI and audio regressions
+
+With a locally installed Playwright module and Chrome, run:
+
+```powershell
+$env:PLAYWRIGHT_MODULE = 'absolute/path/to/playwright/index.mjs'
+node scripts/test-telegram-ui.mjs
+node scripts/test-telegram-audio.mjs
+```
+
+The UI test covers forwarding, Back, retries, both themes and mobile layouts.
+The audio test uses two real browser WebRTC peers with simulated Telegram RPCs
+and a synthetic microphone. It verifies matching fingerprints, bidirectional
+audio, live effects, mute, repeated calls, video negotiation, recording/retry/cancel
+and the actual Opus worker. These are local tests; a call to a signed-in native
+Telegram mobile client still needs device/account verification.

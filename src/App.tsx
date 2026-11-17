@@ -1,3 +1,4 @@
+import type { NativeCallInfo } from './services/nativeTelegramCall';
 import { CallRecordingPanel, CallRecordingIndicator } from './components/call/CallRecordingPanel';
 /**
  * TG Plus — Real-Time MTProto Telegram Web Client
@@ -9,6 +10,11 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredVa
 import { deferredPanel } from './components/common/DeferredPanel';
 import { useEscapeDismiss, useAppBack } from './components/common/useEscapeDismiss';
 import { ChatList, BottomNavTab } from './components/layout/ChatList';
+import { ContactsView } from './components/contacts/ContactsView';
+import { SelfProfileView } from './components/profile/SelfProfileView';
+import { ChatFoldersView } from './components/layout/ChatFoldersView';
+import { WelcomeView } from './components/auth/WelcomeView';
+const DataSettingsPanel = deferredPanel(() => import('./components/settings/DataSettingsPanel').then(m => ({ default: m.DataSettingsPanel })));
 import { SettingsHome } from './components/settings/SettingsHome';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import type { SettingsCategory } from './components/settings/SettingsModal';
@@ -109,11 +115,11 @@ export default function App() {
   );
 
   const [activeNavItem, setActiveNavItem] = useState<
-    'chats' | 'channels' | 'vault' | 'deleted' | 'calls' | 'saved' | 'settings' | 'mods'
+    'chats' | 'channels' | 'vault' | 'deleted' | 'calls' | 'saved' | 'settings' | 'mods' | 'contacts' | 'you'
   >('chats');
 
   const [activeView, setActiveView] = useState<
-    'chats' | 'chat_room' | 'channels' | 'vault' | 'deleted' | 'settings' | 'mod_features'
+    'chats' | 'chat_room' | 'channels' | 'vault' | 'deleted' | 'settings' | 'mod_features' | 'contacts' | 'you' | 'folders'
   >('chats');
   const [activeBottomTab, setActiveBottomTab] = useState<BottomNavTab>('chats');
 
@@ -123,6 +129,8 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('general');
   const openSettings = (category: SettingsCategory = 'general') => { setSettingsCategory(category); setIsSettingsOpen(true); };
+  const [isDataSettingsOpen, setIsDataSettingsOpen] = useState(false);
+  const [loginInitialTab, setLoginInitialTab] = useState<'qr' | 'phone'>('qr');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isDisappearingModalOpen, setIsDisappearingModalOpen] = useState(false);
   const [isAyuGramModalOpen, setIsAyuGramModalOpen] = useState(false);
@@ -133,12 +141,14 @@ export default function App() {
   useEscapeDismiss(isCallsHubOpen, () => setIsCallsHubOpen(false));
   const [callTargetChat, setCallTargetChat] = useState<TelegramChat | null>(null);
   const [activeIncomingOffer, setActiveIncomingOffer] = useState<{
+    nativeCall?: NativeCallInfo;
     callId?: string;
     sdp?: RTCSessionDescriptionInit;
     isVideo?: boolean;
   } | null>(null);
   const [incomingCallPrompt, setIncomingCallPrompt] = useState<{
     chat: TelegramChat;
+    nativeCall?: NativeCallInfo;
     callId?: string;
     isVideo: boolean;
     sdp?: RTCSessionDescriptionInit;
@@ -279,7 +289,14 @@ export default function App() {
       } else if (ev.type === 'CALL_SIGNAL' && ev.action === 'hangup') {
         soundEffects.stopIncomingRing();
         setIncomingCallPrompt(null);
+      } else if (ev.type === 'PHONE_CALL_UPDATE' && ev.state === 'PhoneCallDiscarded') {
+        setIncomingCallPrompt(current => {
+          if (!current || current.callId !== String(ev.callId)) return current;
+          soundEffects.stopIncomingRing(); return null;
+        });
       } else if (ev.type === 'PHONE_CALL_UPDATE' && ev.state === 'PhoneCallRequested') {
+        const nativeCall=ev.nativeCall as NativeCallInfo | undefined;
+        if (nativeCall?.accessHash) void import('./services/nativeTelegramCall').then(({nativeCallRequest}) => nativeCallRequest('received',{callId:nativeCall.id,accessHash:nativeCall.accessHash})).catch(() => {});
         const adminId = ev.adminId ? String(ev.adminId) : '';
         const allChats = telegramService.getChats();
         const foundChat = allChats.find((c) => c.id === adminId) || {
@@ -295,6 +312,7 @@ export default function App() {
           chat: foundChat,
           callId: ev.callId ? String(ev.callId) : undefined,
           isVideo: Boolean(ev.video),
+          nativeCall: ev.nativeCall as NativeCallInfo,
         });
       }
     });
@@ -652,7 +670,7 @@ export default function App() {
     setCreateModalMode(mode || 'group');
     setIsCreateChatOpen(true);
   }, []);
-  const handleOpenFolderManager = useCallback(() => setIsFolderManagerOpen(true), []);
+  const handleOpenFolderManager = useCallback(() => setActiveView('folders'), []);
   const handleOpenModSettings = useCallback(() => setIsModSettingsOpen(true), []);
   const handleOpenAyuGramSettings = useCallback(() => setIsAyuGramModalOpen(true), []);
   const handleOpenLoginModal = useCallback(() => setIsLoginModalOpen(true), []);
@@ -856,7 +874,16 @@ export default function App() {
     </div>
   );
 
+  const [isContactFinderOpen, setIsContactFinderOpen] = useState(false);
+  const [contactLink, setContactLink] = useState("");
+  const [contactBusy, setContactBusy] = useState(false);
+  useEscapeDismiss(isContactFinderOpen, () => setIsContactFinderOpen(false));
+  const powerSaving = !modSettings.enableSmoothAnimations && !modSettings.autoPlayGifs;
+  const togglePowerSaving = () => { modSettingsStore.updateSetting("enableSmoothAnimations", powerSaving); modSettingsStore.updateSetting("autoPlayGifs", powerSaving); };
   const renderMobileSubView = () => {
+    if (activeView === "contacts") return <ContactsView accountId={authSession.user.id} connected={authSession.isConnected} onBack={backToChats} onLogin={handleOpenLoginModal} onOpenContact={contact => handleOpenUserProfile(contact.id, contact.title)} onAddContact={() => setIsContactFinderOpen(true)} />;
+    if (activeView === "you") return <SelfProfileView session={authSession} onBack={backToChats} onEdit={() => openSettings("general")} onSettings={() => handleSelectBottomTab("settings")} onPrivacy={() => openSettings("privacy")} onNotifications={() => openSettings("notifications")} onData={() => setIsDataSettingsOpen(true)} onAppearance={() => setIsModSettingsOpen(true)} onNotify={showToast} />;
+    if (activeView === "folders") return <ChatFoldersView folders={folders} chats={chats} activeId={activeFolderId} onBack={() => handleSelectBottomTab("settings")} onManage={() => setIsFolderManagerOpen(true)} onSelect={id => { setActiveFolderId(id); backToChats(); }} />;
     if (activeView === 'settings') {
       return <SettingsHome
         session={authSession}
@@ -864,7 +891,11 @@ export default function App() {
         palette={modSettingsStore.getActivePaletteTokens().name}
         deletedCount={totalDeletedItems}
         onBack={() => { setActiveView('chats'); setActiveBottomTab('chats'); setActiveNavItem('chats'); }}
-        onProfile={() => handleOpenUserProfile(authSession.user.id, authSession.user.firstName)}
+        onProfile={() => handleSelectBottomTab('you')}
+        onSaved={() => handleLeftNavClick('saved')}
+        onFolders={handleOpenFolderManager}
+        onData={() => setIsDataSettingsOpen(true)}
+        powerSaving={powerSaving} onPowerSaving={togglePowerSaving}
         onLogin={() => setIsLoginModalOpen(true)}
         onSettings={openSettings}
         onDeleted={() => handleLeftNavClick('deleted')}
@@ -957,7 +988,7 @@ export default function App() {
   };
 
   const renderActiveChatWorkspace = () => {
-    if (!authSession.isConnected) return renderConnectScreen();
+    if (!authSession.isConnected) return <WelcomeView onLogin={() => { setLoginInitialTab('qr'); setIsLoginModalOpen(true); }} onPhone={() => { setLoginInitialTab('phone'); setIsLoginModalOpen(true); }} />;
     if (!activeChat) {
       return (
         <div className="flex-1 flex flex-col items-center justify-center text-muted dark:text-muted text-sm chat-pattern-tg p-6 text-center space-y-2">
@@ -1280,8 +1311,8 @@ export default function App() {
 
   const telegramNavigation = modSettings.navigationStyle === 'telegram' || (modSettings.navigationStyle === 'auto' && !modSettingsStore.getActivePaletteTokens().id.startsWith('flow-'));
   return (
-    <div className={`tg-app ${activeView !== 'chat_room' && !telegramNavigation ? 'tg-root-tabs' : ''} h-[100dvh] w-full max-w-[100vw] bg-canvas dark:bg-canvas text-ink dark:text-ink flex font-sans select-none overflow-hidden`}>
-      {!telegramNavigation && activeView !== 'chat_room' && <MobileBottomNav active={activeBottomTab === 'deleted' ? 'settings' : activeBottomTab} unread={totalUnread} onSelect={handleSelectBottomTab} />}
+    <div className={`tg-app ${activeView !== 'chat_room' && authSession.isConnected ? 'tg-root-tabs' : ''} h-[100dvh] w-full max-w-[100vw] bg-canvas dark:bg-canvas text-ink dark:text-ink flex font-sans select-none overflow-hidden`}>
+      {activeView !== 'chat_room' && authSession.isConnected && <MobileBottomNav modern={telegramNavigation} user={authSession.user} active={activeBottomTab === 'deleted' ? 'settings' : activeBottomTab} unread={totalUnread} onSelect={handleSelectBottomTab} />}
       <CallRecordingIndicator onOpen={() => setIsCallsHubOpen(true)} />
       {/* Toast Notice */}
       {toastNotice && (
@@ -1321,6 +1352,7 @@ export default function App() {
               type="button"
               onClick={() => {
                 soundEffects.stopIncomingRing();
+                if (incomingCallPrompt.nativeCall) void telegramService.discardPhoneCall({callId:incomingCallPrompt.nativeCall.id,accessHash:incomingCallPrompt.nativeCall.accessHash,isVideo:incomingCallPrompt.isVideo});
                 telegramService.sendCallSignal({
                   action: 'hangup',
                   chatId: incomingCallPrompt.chat.id,
@@ -1343,6 +1375,7 @@ export default function App() {
                 setCallInitialVideo(prompt.isVideo);
                 setActiveIncomingOffer({
                   callId: prompt.callId,
+                  nativeCall: prompt.nativeCall,
                   sdp: prompt.sdp,
                   isVideo: prompt.isVideo,
                 });
@@ -1551,11 +1584,13 @@ export default function App() {
             : 'flex'
         } tg-sidebar w-full lg:w-80 xl:w-84 shrink-0 flex-col h-full`}
       >
-        {activeView === 'settings' || activeView === 'mod_features' ? (
+        {activeView === 'settings' || activeView === 'mod_features' || activeView === 'contacts' || activeView === 'you' || activeView === 'folders' ? (
           <div className={telegramNavigation ? "flex-1 flex flex-col h-full" : "flex-1 flex flex-col h-full lg:hidden"}>{renderMobileSubView()}</div>
         ) : null}
 
-        <div className={`${activeView === 'settings' || activeView === 'mod_features' ? telegramNavigation ? 'hidden' : 'hidden lg:flex' : 'flex'} flex-1 flex-col h-full overflow-hidden`}>
+        <div className={`${activeView === 'settings' || activeView === 'mod_features' || activeView === 'contacts' || activeView === 'you' || activeView === 'folders' ? telegramNavigation ? 'hidden' : 'hidden lg:flex' : 'flex'} flex-1 flex-col h-full overflow-hidden`}>
+          {!authSession.isConnected && <div className="flex flex-1 flex-col lg:hidden"><WelcomeView onLogin={() => { setLoginInitialTab('qr'); setIsLoginModalOpen(true); }} onPhone={() => { setLoginInitialTab('phone'); setIsLoginModalOpen(true); }} /></div>}
+          <div className={authSession.isConnected ? 'contents' : 'hidden lg:contents'}>
           <ChatList
             chats={chats}
             currentUser={authSession.user}
@@ -1573,18 +1608,16 @@ export default function App() {
             onOpenModSettings={handleOpenModSettings}
             onOpenAyuGramSettings={handleOpenAyuGramSettings}
             onOpenLoginModal={handleOpenLoginModal}
-            onOpenMyProfile={() => {
-              if (authSession.isConnected && authSession.user.id) {
-                setActiveUserProfileId(authSession.user.id);
-              } else {
-                openSettings();
-              }
-            }}
+            onOpenMyProfile={() => handleSelectBottomTab("you")}
+            onOpenData={() => setIsDataSettingsOpen(true)}
+            onOpenCategory={openSettings} powerSaving={powerSaving} onPowerSaving={togglePowerSaving}
+            onLogout={async () => { await telegramService.logout(); backToChats(); }}
             onOpenCallsHub={() => setIsCallsHubOpen(true)}
             onOpenVoiceStudio={() => setIsVoiceStudioOpen(true)}
             activeBottomTab={activeBottomTab}
             onSelectBottomTab={handleSelectBottomTab}
           />
+          </div>
         </div>
       </div>
 
@@ -1714,7 +1747,11 @@ export default function App() {
         onNotify={showToast}
       />
 
+      {isContactFinderOpen && <div role="dialog" aria-modal="true" aria-label="Find a contact" className="fixed inset-0 z-[95] bg-black/40 flex items-center justify-center p-4" onClick={() => setIsContactFinderOpen(false)}><form className="tg-next-card w-full max-w-sm p-5" onClick={e => e.stopPropagation()} onSubmit={async e => { e.preventDefault(); if (!contactLink.trim() || contactBusy) return; setContactBusy(true); try { await handleOpenChatByLink(contactLink.trim()); setIsContactFinderOpen(false); setContactLink(""); } catch (error) { showToast((error as Error).message || "Could not find contact"); } finally { setContactBusy(false); } }}><h2 className="font-semibold text-lg mb-4">Find a contact</h2><input className="tg-search-field w-full" aria-label="Telegram username or link" placeholder="@username or t.me link" autoFocus value={contactLink} onChange={e => setContactLink(e.target.value)} /><div className="flex justify-end gap-3 mt-4"><button type="button" onClick={() => setIsContactFinderOpen(false)}>Cancel</button><button type="submit" className="tg-next-primary" disabled={contactBusy || !contactLink.trim()}>{contactBusy ? "Opening…" : "Open"}</button></div></form></div>}
+      <DataSettingsPanel isOpen={isDataSettingsOpen} onClose={() => setIsDataSettingsOpen(false)} />
       <TelegramLoginModal
+        key={loginInitialTab}
+        initialTab={loginInitialTab}
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
         onLoginSuccess={() => {

@@ -1,3 +1,5 @@
+import { registerNativeCallRoutes, serializeNativeCall } from './src/server/nativeCalls';
+import { registerContactRoutes } from './src/server/contacts';
 import { registerCallRecordingRoutes } from './src/server/callRecordings';
 import { registerMessageSearchRoutes } from './src/server/messageSearch';
 import { chooseThumbnail, imageMime, withFreshMedia } from './src/server/mediaLoading';
@@ -2083,6 +2085,7 @@ function attachRealtimeHandlers(tgClient: TelegramClient) {
             participantId: pc.participantId?.toString(),
             video: Boolean(pc.video),
             state: pc.className || 'PhoneCall',
+            nativeCall: serializeNativeCall(update.phoneCall),
           });
         }
       } else if (update instanceof Api.UpdatePhoneCallSignalingData) {
@@ -7510,6 +7513,8 @@ async function main() {
     }
   });
 
+  registerContactRoutes(app, { client: () => client, cache: peerEntityCache });
+
   app.post('/api/tg/contacts/:chatId/block', async (req, res) => {
     if (!client || !client.connected) return res.status(401).json({ error: 'Not authenticated' });
     try {
@@ -7620,8 +7625,10 @@ async function main() {
   registerCallRecordingRoutes(app, VAULT_DIR, () => ({ client, accountId: currentMe?.id.toString() || '' }));
 
   app.get('/api/tg/calls/capabilities', (_req, res) => {
-    res.json({ nativeCalls: false, nativeGroupCalls: false, reason: 'Telegram call audio is not available in this build. Open Telegram to make or join the call.' });
+    res.json({ nativeCalls: true, nativeGroupCalls: false, reason: 'Group call media is not supported in this build. Private calls use the Telegram Web A transport.' });
   });
+
+  registerNativeCallRoutes(app, { client: () => client, resolvePeer });
 
   // Telegram calls require a negotiated DH key and the native media transport.
   // Local-tab SDP relays cannot substitute for that handshake.

@@ -1,61 +1,49 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ChevronRight, Search, X, UserRound, Bell, Monitor, Folder, Shield, Trash2, FolderArchive, EyeOff, AudioLines, Palette, RotateCcw, QrCode, Phone } from 'lucide-react';
+import { ChevronRight, Search, X, UserRound, Bell, Monitor, Folder, Shield, Trash2, FolderArchive, EyeOff, AudioLines, Palette, QrCode, Phone, Bookmark, Database, Battery, Globe } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
+import { useEscapeDismiss } from '../common/useEscapeDismiss';
 import type { AuthSession } from '../../types/telegram';
 import type { SettingsCategory } from './SettingsModal';
-
 interface Props {
   session: AuthSession; phone: string; palette: string; deletedCount: number;
   onBack: () => void; onProfile: () => void; onLogin: () => void;
-  onSettings: (category: SettingsCategory) => void;
-  onDeleted: () => void; onVault: () => void; onAyu: () => void;
-  onVoice: () => void; onAppearance: () => void; onCalls: () => void; onResetStyle: () => void;
+  onSettings: (category: SettingsCategory) => void; onSaved: () => void; onFolders: () => void; onData: () => void;
+  onDeleted: () => void; onVault: () => void; onAyu: () => void; onVoice: () => void; onAppearance: () => void; onCalls: () => void; onResetStyle: () => void;
+  powerSaving: boolean; onPowerSaving: () => void;
 }
-
 export function SettingsHome(p: Props) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(''), [searching, setSearching] = useState(false);
+  useEscapeDismiss(searching || Boolean(query), () => { setQuery(''); setSearching(false); });
   const groups = [
-    { title: 'Account', rows: [
-      { title: 'My profile', detail: 'Name, bio and username', icon: UserRound, action: p.onProfile },
-      { title: 'Devices', detail: 'Active Telegram sessions', icon: Monitor, action: () => p.onSettings('devices') },
-      { title: 'Privacy and security', detail: 'Passcode, last seen and blocked users', icon: Shield, action: () => p.onSettings('privacy') },
-    ]},
-    { title: 'Your experience', rows: [
-      { title: 'Appearance', detail: p.palette, icon: Palette, action: p.onAppearance },
-      { title: 'Notifications and sounds', detail: 'Message alerts and sound effects', icon: Bell, action: () => p.onSettings('notifications') },
-      { title: 'Chat folders', detail: 'Organize your conversations', icon: Folder, action: () => p.onSettings('chats') },
-      { title: 'Calls and recordings', detail: 'Call history and saved audio', icon: Phone, action: p.onCalls },
+    { title: '', rows: [
+      { title: 'My Profile', icon: UserRound, action: p.onProfile, tone: 4 },
+      { title: 'Saved Messages', icon: Bookmark, action: p.onSaved, tone: 0 },
+      { title: 'Notifications and Sounds', icon: Bell, action: () => p.onSettings('notifications'), tone: 3 },
+      { title: 'Privacy and Security', icon: Shield, action: () => p.onSettings('privacy'), tone: 0 },
+      { title: 'Data and Storage', icon: Database, action: p.onData, tone: 2 },
+      { title: 'Chat Settings', icon: Palette, action: p.onAppearance, tone: 4 },
+      { title: 'Devices', icon: Monitor, action: () => p.onSettings('devices'), tone: 0 },
+      { title: 'Chat Folders', icon: Folder, action: p.onFolders, tone: 1 },
+      { title: 'Recent Calls', icon: Phone, action: p.onCalls, tone: 0 },
     ]},
     { title: 'Webygram extras', rows: [
-      { title: 'AyuGram', detail: 'Ghost mode, privacy and extra controls', icon: EyeOff, action: p.onAyu },
-      { title: 'Media vault', detail: 'Saved media and auto-forward rules', icon: FolderArchive, action: p.onVault },
-      { title: 'Deleted messages', detail: `${p.deletedCount} archived items`, icon: Trash2, action: p.onDeleted },
-      { title: 'Voice changer', detail: 'Live effects and voice notes', icon: AudioLines, action: p.onVoice },
-    ]},
-    { title: 'Preferences', rows: [
-      { title: 'Reset appearance', detail: 'Restore Original Telegram', icon: RotateCcw, action: p.onResetStyle },
+      { title: 'AyuGram', icon: EyeOff, action: p.onAyu, tone: 4 },
+      { title: 'Media Vault', icon: FolderArchive, action: p.onVault, tone: 2 },
+      { title: 'Deleted Messages', icon: Trash2, action: p.onDeleted, tone: 3 },
+      { title: 'Voice Changer', icon: AudioLines, action: p.onVoice, tone: 0 },
     ]},
   ];
-  const filtered = groups.map(g => ({...g, rows: g.rows.filter(r => `${r.title} ${r.detail}`.toLowerCase().includes(query.toLowerCase()))})).filter(g => g.rows.length);
-  const name = p.session.isConnected ? `${p.session.user.firstName} ${p.session.user.lastName || ''}`.trim() : 'Welcome to Webygram';
-  return <section className="tg-settings-home flex-1 min-w-0 flex flex-col bg-canvas text-ink overflow-hidden">
-    <header className="tg-screen-header">
-      <button aria-label="Back to chats" onClick={p.onBack} className="tg-icon-button"><ArrowLeft /></button>
-      <h1>Settings</h1>
-    </header>
-    <div className="tg-settings-content flex-1 overflow-y-auto px-4 pb-5 space-y-6">
-      <div className="tg-search-field"><Search className="h-5 w-5" /><input aria-label="Search settings" placeholder="Search settings" value={query} onChange={e=>setQuery(e.target.value)} />{query && <button onClick={()=>setQuery('')} aria-label="Clear settings search"><X className="h-4 w-4" /></button>}</div>
-      {!query && <div className="tg-profile-card">
-        <button onClick={p.session.isConnected ? p.onProfile : p.onLogin} className="flex items-center gap-4 flex-1 min-w-0 text-left">
-          <Avatar src={p.session.user.avatarUrl} title={name} id={p.session.user.id} size="lg" />
-          <span className="min-w-0"><strong className="block text-lg font-medium leading-snug">{name}</strong><span className="block text-sm text-muted mt-1">{p.session.isConnected ? p.phone : 'Connect your Telegram account'}</span></span>
-        </button>
-        <button aria-label="Sign in or switch account" onClick={p.onLogin} className="tg-icon-button"><QrCode /></button>
-      </div>}
-      {filtered.map(group=><section key={group.title} className="tg-settings-section space-y-2"><h2 className="tg-section-label">{group.title}</h2><div className="tg-settings-group">
-        {group.rows.map(row=><button key={row.title} onClick={row.action} className="tg-settings-row"><span className="tg-row-icon"><row.icon className="h-5 w-5" /></span><span className="flex-1 min-w-0"><span className="block text-[15px] font-medium">{row.title}</span><span className="block text-[13px] text-muted mt-0.5">{row.detail}</span></span><ChevronRight className="h-4 w-4 shrink-0 text-muted" /></button>)}
+  const filtered = groups.map(group => ({ ...group, rows: group.rows.filter(row => row.title.toLowerCase().includes(query.toLowerCase())) })).filter(group => group.rows.length);
+  const name = p.session.isConnected ? [p.session.user.firstName, p.session.user.lastName].filter(Boolean).join(' ') : 'Welcome to Webygram';
+  return <section className="tg-settings-home tg-next-page"><header className="tg-next-header"><h1>Settings</h1><button type="button" aria-label={searching ? 'Close settings search' : 'Search settings'} className="tg-icon-button" onClick={() => { setSearching(!searching); setQuery(''); }}>{searching ? <X /> : <Search />}</button></header>
+    <div className="tg-next-scroll">
+      {searching && <label className="tg-search-field"><Search className="w-5 h-5" /><input autoFocus aria-label="Search settings" placeholder="Search settings" value={query} onChange={e => setQuery(e.target.value)} /></label>}
+      {!query && <button type="button" onClick={p.session.isConnected ? p.onProfile : p.onLogin} className="tg-next-card tg-settings-identity"><Avatar src={p.session.user.avatarUrl} title={name} id={p.session.user.id} size="lg" /><span className="flex-1 min-w-0 text-left"><strong className="block truncate">{name}</strong><span className="block text-[13px] text-muted mt-1">{p.session.isConnected ? p.phone : 'Connect your Telegram account'}</span></span>{p.session.isConnected ? <ChevronRight /> : <QrCode />}</button>}
+      {filtered.map((group, groupIndex) => <section key={group.title || 'preferences'}>{group.title && <h2 className="tg-next-section-label">{group.title}</h2>}<div className="tg-next-card">
+        {group.rows.map(row => <button type="button" key={row.title} onClick={row.action} className="tg-next-row"><span className={'tg-next-icon tone-' + row.tone}><row.icon /></span><span className="flex-1">{row.title}</span><ChevronRight /></button>)}
+        {groupIndex === 0 && !query && <><button type="button" role="switch" aria-checked={p.powerSaving} onClick={p.onPowerSaving} className="tg-next-row"><span className="tg-next-icon tone-1"><Battery /></span><span className="flex-1">Power Saving</span><span className={'tg-next-switch ' + (p.powerSaving ? 'is-on' : '')}><span /></span></button><div className="tg-next-row"><span className="tg-next-icon tone-4"><Globe /></span><span className="flex-1">Language</span><span className="text-muted">English</span></div></>}
       </div></section>)}
-      {!filtered.length && <p role="status" className="py-12 text-center text-muted">No settings match “{query}”.</p>}
-    </div>
-  </section>;
+      {!filtered.length && <p role="status" className="tg-next-empty">No settings match your search.</p>}
+      <p className="tg-next-footer">Webygram · Telegram client</p>
+    </div></section>;
 }

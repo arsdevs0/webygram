@@ -1,3 +1,5 @@
+import { NativePhoneCallModal } from './NativePhoneCallModal';
+import type { NativeCallInfo } from '../../services/nativeTelegramCall';
 import { CallRecordingPanel } from './CallRecordingPanel';
 import { callRecordingService } from '../../services/callRecordingService';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -34,7 +36,7 @@ interface Props {
   isOpen: boolean;
   initialVideo?: boolean;
   isIncoming?: boolean;
-  incomingOffer?: { callId?: string; sdp?: RTCSessionDescriptionInit; isVideo?: boolean } | null;
+  incomingOffer?: { nativeCall?: NativeCallInfo; callId?: string; sdp?: RTCSessionDescriptionInit; isVideo?: boolean } | null;
   onClose: () => void;
 }
 
@@ -45,7 +47,7 @@ const ICE_SERVERS: RTCConfiguration = {
   ],
 };
 
-export const VoiceCallModal: React.FC<Props> = ({
+const LegacyVoiceCallModal: React.FC<Props> = ({
   chat,
   isOpen,
   initialVideo = false,
@@ -1045,3 +1047,5 @@ export const VoiceCallModal: React.FC<Props> = ({
   );
 };
 import { appFetch as fetch } from '../../services/appTransport';
+
+export const VoiceCallModal: React.FC<Props> = props => props.chat?.type === "user" ? <NativePhoneCallModal chat={props.chat} isOpen={props.isOpen} initialVideo={props.initialVideo} incomingOffer={props.incomingOffer} onClose={props.onClose} /> : <LegacyVoiceCallModal {...props} />;

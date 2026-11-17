@@ -35,6 +35,8 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
   const [isRecordingTest, setIsRecordingTest] = useState(false);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [isPlayingTest, setIsPlayingTest] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const startingTestRef = useRef(false);
   const [savePresetName, setSavePresetName] = useState('');
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const [audioDevices, setAudioDevices] = useState<{ inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] }>({
@@ -70,6 +72,14 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
     };
   }, []);
 
+  useEffect(() => {
+    if (isOpen) return;
+    if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+    audioElementRef.current?.pause(); setIsPlayingTest(false);
+    void voiceChanger.setLivePreview(false);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const accentHex = modSettingsStore.getAccentColorHex();
@@ -79,11 +89,15 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   const handleStartTestRecord = async () => {
+    if (startingTestRef.current || mediaRecorderRef.current?.state === 'recording') return;
+    startingTestRef.current = true; setPreviewError('');
     try {
+      if (typeof MediaRecorder === 'undefined') throw new Error('This browser cannot record audio. Update it and try again.');
       const ok = await voiceChanger.ensureReadyForCapture();
       if (!mountedRef.current) return;
       if (!ok) {
         setIsRecordingTest(false);
+        setPreviewError(voiceChanger.getLastError() || 'Microphone unavailable. Check browser permissions.');
         return;
       }
       const stream = voiceChanger.getProcessedOutputStream() || voiceChanger.micStream;
@@ -109,9 +123,7 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
 
       const captureStream = stream.clone();
       captureStreamRef.current = captureStream;
-      const recorder = chosenMime
-        ? new MediaRecorder(captureStream, { mimeType: chosenMime })
-        : new MediaRecorder(captureStream);
+      const recorder = new MediaRecorder(captureStream, { ...(chosenMime ? { mimeType: chosenMime } : {}), audioBitsPerSecond: modSettingsStore.getSettings().highQualityVoiceNotes ? 64000 : 32000 });
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -125,12 +137,18 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
         if (!mountedRef.current) return;
         const mime = chosenMime || recorder.mimeType || 'audio/webm';
         const blob = new Blob(recordedChunksRef.current, { type: mime });
+        if(blob.size < 64) { setIsRecordingTest(false); setPreviewError('The recording was empty. Try a longer sample.'); return; }
         const url = URL.createObjectURL(blob);
         recordedUrlRef.current = url;
         setRecordedAudioUrl(url);
         setIsRecordingTest(false);
       };
 
+      recorder.onerror = () => {
+        if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
+        captureStream.getTracks().forEach(track=>track.stop());
+        if(mountedRef.current) { setIsRecordingTest(false); setPreviewError('Recording stopped unexpectedly. Please retry.'); }
+      };
       mediaRecorderRef.current = recorder;
       recorder.start(100);
       setIsRecordingTest(true);
@@ -140,11 +158,12 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
           recorder.stop();
         }
       }, 8000);
-    } catch {
+    } catch(error) {
+      if (mountedRef.current) setPreviewError((error as Error).message || "Could not record a voice sample.");
       captureStreamRef.current?.getTracks().forEach(track => track.stop());
       captureStreamRef.current = null;
       if (mountedRef.current) setIsRecordingTest(false);
-    }
+    } finally { startingTestRef.current = false; }
   };
 
   const handleStopTestRecord = () => {
@@ -166,7 +185,7 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
       el
         .play()
         .then(() => setIsPlayingTest(true))
-        .catch(() => setIsPlayingTest(false));
+        .catch(error => { setIsPlayingTest(false); setPreviewError(error.message || 'Playback failed. Tap Play again.'); });
     }
   };
 
@@ -302,9 +321,9 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
 
         {/* Content */}
         <div className="min-h-0 p-4 sm:p-6 overflow-y-auto space-y-5 flex-1">
-          {state.lastError && (
+          {(state.lastError || previewError) && (
             <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-700 dark:text-rose-300">
-              {state.lastError}
+              {previewError || state.lastError}
             </div>
           )}
 
@@ -567,6 +586,7 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
                     ref={audioElementRef}
                     src={recordedAudioUrl || undefined}
                     onEnded={() => setIsPlayingTest(false)}
+                    onError={() => { setIsPlayingTest(false); setPreviewError('This recording could not be played. Record a new sample.'); }}
                     className="hidden"
                   />
                 </div>

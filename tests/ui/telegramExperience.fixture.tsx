@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import '../../src/index.css';
 import '../../src/flow-design.css';
+import '../../src/telegram-next.css';
 import App from '../../src/App';
 import { telegramService } from '../../src/services/telegramService';
 const chats: any[] = [
@@ -16,7 +17,8 @@ const messages: any = { alice: [
   { ...base, id: '2', text: 'Editable message', senderId: 'me', senderName: 'You', isOutgoing: true },
 ], bob: [], me: [] };
 const service: any = telegramService;
-service.getAuthSession = () => ({ isConnected: true, isTestMode: true, user: { id: 'me', firstName: 'Tester', status: 'online' }, dcId: 2, lastSyncTimestamp: Date.now() });
+service.getAuthSession = () => ({ isConnected: !new URLSearchParams(location.search).has('signedOut'), isTestMode: true, user: { id: 'me', firstName: 'Tester', status: 'online' }, dcId: 2, lastSyncTimestamp: Date.now() });
+service.authSession = service.getAuthSession();
 service.getChats = () => chats;
 service.getMessages = (id: string) => messages[id] || [];
 service.loadMessages = async () => [];

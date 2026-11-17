@@ -158,6 +158,9 @@ export const ChatInput: React.FC<Props> = ({
   const [text, setText] = useState('');
   const [localSendError, setLocalSendError] = useState<string | null>(null);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [isVoiceBusy, setIsVoiceBusy] = useState(false);
+  const [pendingVoice, setPendingVoice] = useState<{fileDataUrl: string; fileName: string; duration: number; presetUsed?: string} | null>(null);
+  const voiceStartingRef = useRef(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [showExpressionDrawer, setShowExpressionDrawer] = useState(false);
   const [expressionTab, setExpressionTab] = useState<'emoji' | 'stickers' | 'gifs'>('emoji');
@@ -421,12 +424,14 @@ export const ChatInput: React.FC<Props> = ({
   };
 
   const handleStartVoiceRecording = async () => {
+    if (voiceStartingRef.current || isVoiceBusy || pendingVoice || mediaRecorderRef.current?.state === "recording") return;
+    if (!canSendMedia) { onNotify?.(sendRestrictionReason || "Voice messages are restricted in this chat."); return; }
+    voiceStartingRef.current = true; setIsVoiceBusy(true); setLocalSendError(null);
     try {
+      if (typeof MediaRecorder === "undefined") throw new Error("This browser cannot record audio. Update it and try again.");
       const ok = await voiceChanger.ensureReadyForCapture();
       if (!mountedRef.current) return;
-      const stream = voiceState.enabled
-        ? voiceChanger.getProcessedOutputStream() || voiceChanger.micStream
-        : voiceChanger.micStream || voiceChanger.getProcessedOutputStream();
+      const stream = voiceChanger.getProcessedOutputStream();
       if (!ok || !stream || stream.getAudioTracks().length === 0) {
         onNotify?.(voiceChanger.getLastError() || 'Microphone unavailable. Check browser permissions.');
         return;
@@ -441,9 +446,7 @@ export const ChatInput: React.FC<Props> = ({
 
       // The engine owns the original stream; stopping a chat recorder must not end a live call.
       const captureStream = stream.clone();
-      const recorder = chosenMime
-        ? new MediaRecorder(captureStream, { mimeType: chosenMime })
-        : new MediaRecorder(captureStream);
+      const recorder = new MediaRecorder(captureStream, { ...(chosenMime ? { mimeType: chosenMime } : {}), audioBitsPerSecond: modSettingsStore.getSettings().highQualityVoiceNotes ? 64000 : 32000 });
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -455,6 +458,8 @@ export const ChatInput: React.FC<Props> = ({
 
       recorder.onstop = () => {
         captureStream.getTracks().forEach(track => track.stop());
+        mediaRecorderRef.current = null;
+        if (!mountedRef.current) return;
         const elapsedSeconds = Math.max(
           1,
           Math.round((Date.now() - recordingStartTimeRef.current) / 1000)
@@ -475,21 +480,17 @@ export const ChatInput: React.FC<Props> = ({
         }
         const ext = blobType.includes('mp4') ? 'm4a' : blobType.includes('webm') ? 'webm' : 'ogg';
         const reader = new FileReader();
-        reader.onload = () => {
+        reader.onload = async () => {
+          if (!mountedRef.current) return;
           if (typeof reader.result === 'string') {
             const activePreset = voiceState.enabled
               ? BUILTIN_VOICE_PRESETS[voiceState.selectedPresetId as keyof typeof BUILTIN_VOICE_PRESETS]?.name || 'Custom'
               : undefined;
-            void Promise.resolve(
-              onSendMessage('', {
-                fileDataUrl: reader.result,
-                fileName: `voice_${Date.now()}.${ext}`,
-                duration: elapsedSeconds,
-                presetUsed: activePreset,
-              })
-            ).catch((err: unknown) => {
-              setLocalSendError((err as Error)?.message || 'Failed to send voice note.');
-            });
+            const voice = { fileDataUrl: reader.result, fileName: "voice_" + Date.now() + "." + ext, duration: elapsedSeconds, presetUsed: activePreset };
+            setPendingVoice(voice); setIsVoiceBusy(true);
+            try { const sent = await onSendMessage("", voice); if (mountedRef.current && sent !== false) setPendingVoice(null); }
+            catch (error) { if (mountedRef.current) setLocalSendError((error as Error).message || "Failed to send voice note. Retry below."); }
+            finally { if (mountedRef.current) setIsVoiceBusy(false); }
           }
         };
         reader.onerror = () => {
@@ -498,6 +499,7 @@ export const ChatInput: React.FC<Props> = ({
         reader.readAsDataURL(blob);
       };
 
+      recorder.onerror = () => { captureStream.getTracks().forEach(track => track.stop()); if (mountedRef.current) { setIsRecordingVoice(false); setLocalSendError("Recording stopped unexpectedly. Please retry."); } if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
       mediaRecorderRef.current = recorder;
       recorder.start(100);
       setIsRecordingVoice(true);
@@ -511,8 +513,10 @@ export const ChatInput: React.FC<Props> = ({
       }, 500);
     } catch (err) {
       setIsRecordingVoice(false);
-      onNotify?.((err as Error).message || 'Could not start voice recording.');
-    }
+      mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+      const message = (err as Error).message || 'Could not start voice recording.';
+      setLocalSendError(message); onNotify?.(message);
+    } finally { voiceStartingRef.current = false; if (mountedRef.current) setIsVoiceBusy(false); }
   };
 
   const handleStopAndSendVoice = () => {
@@ -523,7 +527,6 @@ export const ChatInput: React.FC<Props> = ({
         // ignore if unsupported
       }
       mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
     }
   };
 
@@ -531,6 +534,8 @@ export const ChatInput: React.FC<Props> = ({
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.onstop = null;
       mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current = null;
     }
     setIsRecordingVoice(false);
     setRecordingSeconds(0);
@@ -686,6 +691,7 @@ export const ChatInput: React.FC<Props> = ({
         </div>
       )}
 
+      {pendingVoice && <div className="tg-voice-retry"><audio controls playsInline src={pendingVoice.fileDataUrl} /><div><span className="text-muted text-xs">{isVoiceBusy ? "Sending voice…" : "Voice note kept for retry"}</span><button type="button" disabled={isVoiceBusy} onClick={() => setPendingVoice(null)}>Discard</button><button type="button" disabled={isVoiceBusy} onClick={async () => { setIsVoiceBusy(true); try { const sent = await onSendMessage("", pendingVoice); if (sent !== false && mountedRef.current) setPendingVoice(null); } catch (error) { setLocalSendError((error as Error).message); } finally { if (mountedRef.current) setIsVoiceBusy(false); } }}>Retry voice</button></div></div>}
       {/* Reply / Edit Context Strip (Matches Official Telegram Bar above Composer) */}
       {(replyingTo || editingMessage) && (
         <div className="flex items-center justify-between px-3.5 py-1.5 border-b border-outline dark:border-white/[0.06] bg-surface-low/70 dark:bg-surface text-xs">
@@ -1039,6 +1045,8 @@ export const ChatInput: React.FC<Props> = ({
           ) : (
             <button
               type="button"
+              disabled={isVoiceBusy || Boolean(pendingVoice)}
+              aria-label={isVoiceBusy ? "Starting microphone" : voiceState.enabled ? "Record Voice (" + activePresetName + ")" : "Record Voice Message"}
               onClick={handleStartVoiceRecording}
               className="w-11 h-11 rounded-full bg-elevated dark:bg-canvas hover:bg-primary/15 text-muted dark:text-muted hover:text-primary border border-outline/80 dark:border-white/[0.07] flex items-center justify-center shrink-0 cursor-pointer transition-colors"
               title={voiceState.enabled ? `Record Voice (${activePresetName})` : 'Record Voice Message'}
