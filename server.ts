@@ -94,6 +94,7 @@ interface VaultEntry {
 }
 
 interface CachedMessageMeta {
+  groupedId?: string;
   id: string;
   chatId: string;
   senderId: string;
@@ -128,6 +129,7 @@ interface CachedMessageMeta {
   };
   topicId?: number;
   media?: {
+    isRoundVideo?: boolean;
     type: 'photo' | 'video' | 'voice' | 'file' | 'sticker' | 'gif';
     url: string;
     thumbnailUrl?: string;
@@ -1315,6 +1317,7 @@ function serializeMessage(
     senderAvatar: senderAvatar ?? (existingCache as (CachedMessageMeta & { senderAvatar?: string }) | undefined)?.senderAvatar,
     text: msg.message || '',
     entities,
+    groupedId: msg.groupedId?.toString(),
     timestamp: msg.date ? msg.date * 1000 : Date.now(),
     isOutgoing: Boolean(msg.out),
     isRead: computedIsRead,
@@ -1366,6 +1369,7 @@ function serializeMessage(
             waveform: mediaInfo.waveform,
             mimeType: mediaInfo.mimeType,
             isAnimated: mediaInfo.isAnimated,
+            isRoundVideo: Boolean(msg.media instanceof Api.MessageMediaDocument && msg.media.document instanceof Api.Document && msg.media.document.attributes.some(attr => attr instanceof Api.DocumentAttributeVideo && attr.roundMessage)),
             isDisappearing: mediaInfo.isDisappearing,
             expireSeconds: mediaInfo.expireSeconds,
             isExpired: false,
@@ -3780,12 +3784,14 @@ async function main() {
         filterType === 'files'
           ? new Api.InputMessagesFilterDocument()
           : filterType === 'voice'
-          ? new Api.InputMessagesFilterVoice()
+          ? new Api.InputMessagesFilterRoundVoice()
+          : filterType === 'links' ? new Api.InputMessagesFilterUrl()
+          : filterType === 'music' ? new Api.InputMessagesFilterMusic()
           : new Api.InputMessagesFilterPhotoVideo();
 
       const collectedMsgs: Api.Message[] = [];
       const seenMsgIds = new Set<number>();
-      const maxPages = currentOffsetId === 0 ? 3 : 2;
+      const maxPages = 1;
       let lastBatchLen = 0;
 
       for (let page = 0; page < maxPages && collectedMsgs.length < requestedLimit; page++) {
@@ -3827,7 +3833,7 @@ async function main() {
       }
 
       const rawValid = collectedMsgs
-        .filter((m): m is Api.Message => m instanceof Api.Message && Boolean(detectMediaInfo(m)))
+        .filter((m): m is Api.Message => m instanceof Api.Message && (filterType === 'links' || Boolean(detectMediaInfo(m))))
         .sort((a, b) => b.id - a.id);
 
       const items = rawValid.map((m) => {
@@ -3843,12 +3849,8 @@ async function main() {
         hasMore: lastBatchLen >= 40,
         nextOffsetId: oldestId,
       });
-    } catch {
-      return res.json({
-        items: [],
-        hasMore: false,
-        nextOffsetId: 0,
-      });
+    } catch (error) {
+      return res.status(500).json({ error: (error as Error).message || 'Could not load shared media' });
     }
   });
 
@@ -6252,7 +6254,7 @@ async function main() {
             new Api.channels.ExportMessageLink({
               channel: peer,
               id: msgId,
-              grouped: false,
+              grouped: true,
             })
           );
           if (exported?.link) return res.json({ link: exported.link });
@@ -7719,12 +7721,14 @@ async function main() {
         };
       });
 
-      const callObj = groupCallRes.call as Api.GroupCall;
+      if (!(groupCallRes.call instanceof Api.GroupCall)) return res.json({ hasActiveCall: false, participants: [] });
+      const callObj = groupCallRes.call;
       return res.json({
         hasActiveCall: true,
         callId: callObj.id.toString(),
         accessHash: callObj.accessHash.toString(),
         title: callObj.title || 'Voice Chat',
+        scheduledStart: callObj.scheduleDate ? callObj.scheduleDate * 1000 : undefined,
         participantsCount: callObj.participantsCount || participants.length,
         participants,
       });

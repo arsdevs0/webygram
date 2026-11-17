@@ -1,3 +1,4 @@
+import { NewMessageDialog } from './NewMessageDialog';
 import { TelegramNavigationMenu } from './TelegramNavigationMenu';
 import { useEscapeDismiss } from '../common/useEscapeDismiss';
 import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react';
@@ -650,22 +651,7 @@ export const ChatList: React.FC<Props> = React.memo(({
                   <CheckCheck className="w-4.5 h-4.5" />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={toggleHideArchivedAboveList}
-                className={`p-1.5 rounded-full cursor-pointer transition-colors ${
-                  hideArchivedAboveList
-                    ? 'text-primary bg-primary/10'
-                    : 'text-muted dark:text-muted hover:text-ink dark:hover:text-white hover:bg-hover dark:hover:bg-hover'
-                }`}
-                title={
-                  hideArchivedAboveList
-                    ? 'Show Archived Chats above chat list'
-                    : 'Hide Archived Chats above chat list'
-                }
-              >
-                {hideArchivedAboveList ? <Eye className="w-4.5 h-4.5" /> : <EyeOff className="w-4.5 h-4.5" />}
-              </button>
+
             </div>
           </div>
 
@@ -694,7 +680,7 @@ export const ChatList: React.FC<Props> = React.memo(({
             </div>
           )}
 
-          <div className="tg-scroll-smooth flex-1 overflow-y-auto divide-y divide-outline dark:divide-outline/70 bg-surface dark:bg-surface">
+          <div className="tg-dialog-list tg-scroll-smooth flex-1 min-h-0 overflow-y-auto divide-y divide-outline dark:divide-outline/70 bg-surface dark:bg-surface">
             {filteredArchivedChats.length === 0 ? (
               <div className="p-8 text-center space-y-2.5 text-muted dark:text-muted">
                 <div className="w-14 h-14 rounded-full bg-elevated dark:bg-elevated flex items-center justify-center mx-auto text-muted dark:text-muted">
@@ -856,7 +842,7 @@ export const ChatList: React.FC<Props> = React.memo(({
 
           {/* Chat List Rows + Skeleton Shimmer + Global Search */}
           {(showSearchBar || searchQuery.trim()) && isConnected ? <SearchResults query={searchQuery} chats={chats} accountId={currentUser?.id || ''} onSelectChat={onSelectChat} onOpenPeer={peer => onOpenChatByLink?.(peer.username ? '@' + peer.username : peer.id)} onOpenMessage={onOpenSearchMessage} /> : (
-          <div className="tg-scroll-smooth flex-1 overflow-y-auto divide-y divide-outline dark:divide-outline/70 bg-surface dark:bg-surface">
+          <div className="tg-dialog-list tg-scroll-smooth flex-1 min-h-0 overflow-y-auto divide-y divide-outline dark:divide-outline/70 bg-surface dark:bg-surface">
             {isConnected &&
               onOpenChatByLink &&
               /^(?:@|https?:\/\/(?:t\.me|telegram\.me)\/|t\.me\/|telegram\.me\/)/i.test(searchQuery.trim()) && (
@@ -922,9 +908,7 @@ export const ChatList: React.FC<Props> = React.memo(({
               <>
                 {/* Official Telegram Pinned Archived Chats Entry Row */}
                 {!searchQuery.trim() &&
-                  activeFolderId === 'f_all' &&
-                  archivedChats.length > 0 &&
-                  !hideArchivedAboveList && (
+                  archivedChats.length > 0 && (
                     <div
                       onClick={() => setIsArchiveViewOpen(true)}
                       onContextMenu={(e) => {
@@ -932,7 +916,8 @@ export const ChatList: React.FC<Props> = React.memo(({
                         e.stopPropagation();
                         setShowArchiveHeaderMenu((prev) => !prev);
                       }}
-                      className="tg-chat-row group relative px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-hover dark:hover:bg-hover cursor-pointer transition-colors"
+                      role="button" tabIndex={0} aria-label="Open archived chats" onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsArchiveViewOpen(true); } }}
+                      className="tg-chat-row tg-archive-entry group relative px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-hover dark:hover:bg-hover cursor-pointer transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div
@@ -1013,17 +998,7 @@ export const ChatList: React.FC<Props> = React.memo(({
                               <span>Mark All as Read</span>
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowArchiveHeaderMenu(false);
-                              toggleHideArchivedAboveList();
-                            }}
-                            className="w-full px-3 py-1.5 text-left hover:bg-hover dark:hover:bg-hover flex items-center gap-2.5 cursor-pointer"
-                          >
-                            <EyeOff className="w-3.5 h-3.5 text-muted" />
-                            <span>Hide Above Chat List</span>
-                          </button>
+
                         </div>
                       )}
                     </div>
@@ -1073,64 +1048,9 @@ export const ChatList: React.FC<Props> = React.memo(({
         </>
       )}
 
-      {/* Official Telegram Floating Circular Blue Pencil FAB */}
-      {isConnected && (
-        <div className="tg-new-message-fab absolute bottom-[74px] lg:bottom-4 right-4 z-30">
-          {showPencilMenu && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="animate-tg-pop-in absolute bottom-14 right-0 w-52 rounded-2xl bg-surface dark:bg-elevated border border-outline dark:border-outline shadow-2xl p-1.5 text-xs overflow-hidden"
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPencilMenu(false);
-                  setShowNewMessageModal(true);
-                  setDirectError(null);
-                }}
-                className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 hover:bg-hover dark:hover:bg-hover text-left font-medium cursor-pointer transition-colors"
-              >
-                <User className="w-4 h-4 text-primary" />
-                <span>New Message</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPencilMenu(false);
-                  onCreateChat?.('group');
-                }}
-                className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 hover:bg-hover dark:hover:bg-hover text-left font-medium cursor-pointer transition-colors"
-              >
-                <Users className="w-4 h-4 text-primary" />
-                <span>New Group</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPencilMenu(false);
-                  onCreateChat?.('channel');
-                }}
-                className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3 hover:bg-hover dark:hover:bg-hover text-left font-medium cursor-pointer transition-colors"
-              >
-                <Radio className="w-4 h-4 text-primary" />
-                <span>New Channel</span>
-              </button>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowPencilMenu((prev) => !prev);
-            }}
-            className="w-12 h-12 rounded-full bg-primary hover:bg-primary-hover active:scale-92 text-white shadow-xl flex items-center justify-center cursor-pointer transition-all duration-150"
-            title={showPencilMenu ? 'Close Menu' : 'New Message, Group, or Channel'}
-          >
-            {showPencilMenu ? <X className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
-          </button>
-        </div>
-      )}
+      {isConnected && <div className="tg-new-message-fab absolute bottom-5 right-4 z-30">
+        <button type="button" aria-label="New message" title="New message" className="tg-compose-fab" onClick={() => { setNewMessageQuery(''); setDirectError(null); setShowNewMessageModal(true); }}><Edit2 /></button>
+      </div>}
 
       {showHamburgerDrawer && telegramNavigation && <TelegramNavigationMenu
         user={userSession} name={userFullName} isConnected={isConnected} night={isDarkTheme}
@@ -1537,102 +1457,7 @@ export const ChatList: React.FC<Props> = React.memo(({
         </div>
       )}
 
-      {/* New Direct Message / Contacts Lookup Modal */}
-      {showNewMessageModal && (
-        <div
-          className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setShowNewMessageModal(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-2xl bg-surface dark:bg-surface border border-outline dark:border-outline shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
-          >
-            <div className="px-4 py-3 border-b border-outline dark:border-outline flex items-center justify-between">
-              <span className="font-bold text-sm">New Message</span>
-              <button
-                type="button"
-                onClick={() => setShowNewMessageModal(false)}
-                className="p-1 text-muted hover:text-ink dark:hover:text-white rounded-lg cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!newMessageQuery.trim() || !onOpenChatByLink) return;
-                setIsOpeningDirect(true);
-                setDirectError(null);
-                try {
-                  await onOpenChatByLink(newMessageQuery.trim());
-                  setNewMessageQuery('');
-                  setShowNewMessageModal(false);
-                } catch (err: any) {
-                  setDirectError(err?.message || 'Could not find user or chat');
-                } finally {
-                  setIsOpeningDirect(false);
-                }
-              }}
-              className="p-3 border-b border-outline dark:border-outline space-y-2"
-            >
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  autoFocus
-                  value={newMessageQuery}
-                  onChange={(e) => setNewMessageQuery(e.target.value)}
-                  placeholder="Enter @username or t.me/link..."
-                  className="flex-1 px-3 py-2 rounded-xl bg-elevated dark:bg-elevated text-xs focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={isOpeningDirect || !newMessageQuery.trim()}
-                  className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
-                >
-                  {isOpeningDirect ? '...' : 'Open'}
-                </button>
-              </div>
-              {directError && <p className="text-[11px] text-rose-400">{directError}</p>}
-            </form>
-
-            <div className="flex-1 overflow-y-auto divide-y divide-outline dark:divide-outline">
-              {personalUsers
-                .filter(
-                  (u) =>
-                    !newMessageQuery.trim() ||
-                    u.title.toLowerCase().includes(newMessageQuery.toLowerCase()) ||
-                    u.username?.toLowerCase().includes(newMessageQuery.toLowerCase())
-                )
-                .map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => {
-                      onSelectChat(u.id);
-                      setShowNewMessageModal(false);
-                    }}
-                    className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-hover dark:hover:bg-hover text-left cursor-pointer"
-                  >
-                    <Avatar
-                      src={u.avatarUrl}
-                      title={u.title}
-                      id={u.id}
-                      size="sm"
-                      isOnline={u.status === 'online'}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold truncate">{u.title}</p>
-                      <p className="text-[11px] text-muted dark:text-muted truncate">
-                        {u.username ? `@${u.username}` : u.status || 'Telegram Contact'}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {showNewMessageModal && <NewMessageDialog accountId={currentUser?.id || ''} chats={personalUsers} onClose={() => setShowNewMessageModal(false)} onSelectChat={onSelectChat} onOpenPeer={onOpenChatByLink} onCreateChat={onCreateChat} />}
 
 
     </div>

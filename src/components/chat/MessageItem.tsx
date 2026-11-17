@@ -1,3 +1,7 @@
+import { useNearViewport } from '../common/useNearViewport';
+import { mediaRetrySource } from '../../utils/mediaRetrySource';
+import { SharedMediaTile } from './SharedMediaTile';
+import { readableAccent } from '../../themes/themeTokens';
 import { ChatPhoto } from './ChatPhoto';
 import { useEscapeDismiss } from '../common/useEscapeDismiss';
 import { createPortal } from 'react-dom';
@@ -49,6 +53,7 @@ const getModSettingsSnapshot = () => modSettingsStore.getSettings();
 
 interface Props {
   message: TelegramMessage;
+  albumMessages?: TelegramMessage[];
   chatId: string;
   chatTitle?: string;
   isChannel?: boolean;
@@ -110,6 +115,7 @@ const formatCompactCount = (count?: number): string => {
 
 export const MessageItem: React.FC<Props> = React.memo(({
   message,
+  albumMessages,
   chatId,
   chatTitle = 'Chat',
   isChannel = false,
@@ -174,6 +180,8 @@ export const MessageItem: React.FC<Props> = React.memo(({
   const forwardBusyRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const nearViewport = useNearViewport(bubbleRef, Boolean(message.media), false);
+  useEffect(() => { for (const video of bubbleRef.current?.querySelectorAll('video[data-autoplay-preview]') || []) { if (nearViewport && modSettingsStore.getSettings().autoPlayGifs !== false) void (video as HTMLVideoElement).play().catch(() => {}); else (video as HTMLVideoElement).pause(); } }, [nearViewport]);
   const lastTapRef = useRef<number>(0);
   const timerRef = useRef<number | null>(null);
   const imageAutoRetriedRef = useRef(false);
@@ -493,11 +501,11 @@ export const MessageItem: React.FC<Props> = React.memo(({
 
   const getBubbleSurfaceClasses = (outgoing: boolean) => {
     const style = modSettings.bubbleStyle || 'telegram';
-    if (style === 'ios' && outgoing) return 'bg-primary text-on-primary border border-transparent rounded-br-xs';
-    const surface = outgoing ? 'tg-bubble-out rounded-br-xs' : 'tg-bubble-in rounded-bl-xs';
-    if (style === 'minimal') return surface + ' text-ink border border-transparent shadow-none';
-    if (style === 'glass') return surface + ' text-ink border opacity-95';
-    return surface + ' text-ink border';
+    if (style === 'ios' && outgoing) return 'tg-message-bubble tg-bubble-ios bg-primary text-on-primary border border-transparent rounded-br-xs';
+    const surface = outgoing ? 'tg-message-bubble tg-bubble-out rounded-br-xs' : 'tg-message-bubble tg-bubble-in rounded-bl-xs';
+    if (style === 'minimal') return surface + ' tg-message-text border border-transparent shadow-none';
+    if (style === 'glass') return surface + ' tg-message-text border opacity-95';
+    return surface + ' tg-message-text border';
   };
 
   const fontSizeClass =
@@ -636,6 +644,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                   }
                 }}
                 className={`text-[12.5px] font-semibold truncate hover:underline cursor-pointer text-left ${senderColorClass}`}
+                style={{color:readableAccent(senderColorClass.match(/#[0-9A-Fa-f]{6}/)?.[0] || modSettingsStore.getActiveAccentHex(),activePalette.bubbleIn,activePalette.text || '#202124')}}
                 title={`View ${message.senderName}'s profile`}
               >
                 {ayuSettings.streamerMode
@@ -710,8 +719,9 @@ export const MessageItem: React.FC<Props> = React.memo(({
             </div>
           )}
 
+        {albumMessages && <div className="tg-message-album" role="group" aria-label={'Album of ' + albumMessages.length + ' items'}>{albumMessages.map((item, index) => <SharedMediaTile key={item.id} anchor={index > 0} message={item} onOpen={() => selectionMode ? onToggleSelect?.(message.id) : onOpenMedia(item.media!, item.id)} />)}</div>}
         {/* PHOTO (Regular & Disappearing) */}
-        {message.media && message.media.type === 'photo' && (
+        {!albumMessages && message.media && message.media.type === 'photo' && (
           <div className={`overflow-hidden ${radiusClass} relative`}>
             {hasBurned || message.media.isExpired ? (
               <div className="p-4 bg-elevated dark:bg-elevated text-center text-muted flex flex-col items-center justify-center gap-1.5 min-w-[220px] min-h-[120px]">
@@ -845,7 +855,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
         )}
 
         {/* VIDEO (Regular & Disappearing TTL Video) */}
-        {message.media && message.media.type === 'video' && (
+        {!albumMessages && message.media && message.media.type === 'video' && (
           <div className={`overflow-hidden ${radiusClass} relative min-w-[240px]`}>
             {hasBurned || message.media.isExpired ? (
               <div className="p-4 bg-elevated dark:bg-elevated text-center text-muted flex flex-col items-center justify-center gap-1.5 min-h-[120px]">
@@ -929,12 +939,10 @@ export const MessageItem: React.FC<Props> = React.memo(({
               >
                 <video
                   src={
-                    videoRetryNonce > 0
-                      ? `${message.media.url}${message.media.url.includes('?') ? '&' : '?'}r=${videoRetryNonce}`
-                      : message.media.url
+                    mediaRetrySource(message.media.url, videoRetryNonce)
                   }
                   poster={message.media.inlineThumb || message.media.thumbnailUrl}
-                  autoPlay={modSettings.autoPlayGifs !== false}
+                  data-autoplay-preview="true" autoPlay={nearViewport && modSettings.autoPlayGifs !== false}
                   loop
                   muted
                   playsInline
@@ -1067,7 +1075,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
               onClick={handleToggleVoicePlayback}
               className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
                 isDarkOut
-                  ? 'bg-white text-primary hover:bg-hover'
+                  ? 'bg-primary text-on-primary hover:bg-primary-hover'
                   : isOut
                   ? 'bg-primary hover:bg-primary text-white'
                   : 'bg-primary hover:bg-primary-hover text-white'
@@ -1095,8 +1103,8 @@ export const MessageItem: React.FC<Props> = React.memo(({
                       className={`flex-1 rounded-full transition-colors ${
                         isDarkOut
                           ? isPlayed
-                            ? 'bg-white'
-                            : 'bg-white/45'
+                            ? 'bg-[var(--tg-message-link)]'
+                            : 'bg-[var(--tg-message-link)] opacity-50'
                           : isOut
                           ? isPlayed
                             ? 'bg-primary'
@@ -1113,7 +1121,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
               <div
                 className={`flex items-center justify-between text-[10.5px] mt-1 tabular-nums ${
                   isDarkOut
-                    ? 'text-white/85'
+                    ? 'tg-message-muted'
                     : isOut
                     ? 'text-muted'
                     : 'text-muted dark:text-muted'
@@ -1161,7 +1169,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                   <div
                     className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                       isDarkOut
-                        ? 'bg-white/20 text-white'
+                        ? 'bg-primary-container text-on-container'
                         : isOut
                         ? 'bg-primary/20 text-primary'
                         : 'bg-primary/15 text-primary'
@@ -1176,7 +1184,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                     <span
                       className={`text-[10px] ${
                         isDarkOut
-                          ? 'text-white/75'
+                          ? 'tg-message-muted'
                           : isOut
                           ? 'text-muted'
                           : 'text-muted dark:text-muted'
@@ -1195,7 +1203,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                   }}
                   className={`p-1.5 rounded-lg cursor-pointer shrink-0 ${
                     isDarkOut
-                      ? 'text-white hover:bg-white/15'
+                      ? 'tg-message-text hover:bg-primary/15'
                       : isOut
                       ? 'text-primary hover:bg-primary/15'
                       : 'text-primary hover:bg-hover dark:hover:bg-hover'
@@ -1266,7 +1274,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
         )}
 
         {/* GIF */}
-        {message.media && message.media.type === 'gif' && (
+        {!albumMessages && message.media && message.media.type === 'gif' && (
           <div
             onClick={() => onOpenMedia(message.media!, message.id)}
             className={`overflow-hidden ${radiusClass} relative bg-black cursor-pointer`}
@@ -1283,7 +1291,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
               <video
                 src={message.media.url}
                 poster={message.media.inlineThumb || message.media.thumbnailUrl}
-                autoPlay={modSettings.autoPlayGifs !== false}
+                data-autoplay-preview="true" autoPlay={nearViewport && modSettings.autoPlayGifs !== false}
                 loop
                 muted
                 playsInline
@@ -1431,6 +1439,8 @@ export const MessageItem: React.FC<Props> = React.memo(({
           </div>
         )}
 
+        {albumMessages?.slice(1).filter(item => item.text).map(item => <div key={'caption-' + item.id} className={`px-3.5 py-2 whitespace-pre-wrap break-words leading-relaxed ${fontSizeClass}`}><FormattedText text={item.text!} entities={item.entities} isOutgoing={isOut} isDarkBubble={isDarkOut} onOpenChatByLink={onOpenChatByLink} onNotify={onNotify} /></div>)}
+
         {/* Bot Inline Keyboard Buttons */}
         {message.replyMarkup && message.replyMarkup.length > 0 && (
           <div className="px-2.5 pb-2 space-y-1">
@@ -1491,7 +1501,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
             }}
             className={`w-full px-3.5 py-2 border-t flex items-center justify-between text-[11.5px] font-medium cursor-pointer transition-colors ${
               isDarkOut
-                ? 'border-white/20 text-white/95 hover:bg-white/10'
+                ? 'border-white/20 tg-message-text hover:bg-white/10'
                 : isOut
                 ? 'border-outline text-primary hover:bg-primary/10'
                 : 'border-outline dark:border-outline text-primary hover:bg-hover dark:hover:bg-hover'

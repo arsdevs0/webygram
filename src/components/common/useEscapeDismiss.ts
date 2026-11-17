@@ -24,8 +24,10 @@ export function useEscapeDismiss(open: boolean, onClose?: () => void) {
     };
   }, [open]);
 }
-export function useAppBack(enabled: boolean, onBack: () => void) {
+export function useAppBack(enabled: boolean, onBack: () => void, onExitHint?: () => void) {
   const backRef = useRef(onBack); backRef.current = onBack;
+  const hintRef = useRef(onExitHint); hintRef.current = onExitHint;
+  useLayoutEffect(() => { getNavigation().setExitProtection(() => hintRef.current?.()); }, []);
   useLayoutEffect(() => { getNavigation().setFallback(enabled ? () => backRef.current() : undefined); });
   useLayoutEffect(() => () => getNavigation().setFallback(undefined), []);
 }

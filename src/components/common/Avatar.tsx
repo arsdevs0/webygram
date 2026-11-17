@@ -1,3 +1,6 @@
+import { readableForeground } from '../../themes/themeTokens';
+import { useNearViewport } from './useNearViewport';
+import { mediaRetrySource } from '../../utils/mediaRetrySource';
 import React, { useState, useEffect, useRef } from 'react';
 import { Bookmark } from 'lucide-react';
 
@@ -65,6 +68,12 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
       };
     }, [src]);
 
+    const elementRef=useRef<HTMLDivElement|null>(null);
+    const avatarSource = src || (id && /^-?\d+$/.test(id) ? '/api/tg/avatar/' + encodeURIComponent(id) : undefined);
+    const near=useNearViewport(elementRef,Boolean(avatarSource)&&!isSaved);
+    const colors = ['#d8646d','#be6cbe','#7676d3','#4c8bcb','#47a5b8','#429d77','#bd813c'];
+    let hash=0; for (const c of id || title) hash=(hash*31+c.charCodeAt(0))|0;
+    const avatarColor=colors[Math.abs(hash)%colors.length];
     const sizeClass = SIZE_CLASSES[size];
     const paletteClass = getPaletteClass(id || title);
     const initials = getInitials(title);
@@ -80,24 +89,24 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
     }
 
     const resolvedSrc =
-      src && retryNonce > 0
-        ? `${src}${src.includes('?') ? '&' : '?'}r=${retryNonce}`
-        : src;
+      avatarSource && retryNonce > 0
+        ? mediaRetrySource(avatarSource,retryNonce)
+        : avatarSource;
 
     return (
-      <div className={`relative shrink-0 ${sizeClass} ${className}`}>
+      <div ref={elementRef} className={`relative shrink-0 ${sizeClass} ${className}`}>
         {/* Monogram underneath as seamless fallback */}
         <div
-          className={`w-full h-full rounded-full ${paletteClass} text-ink font-semibold flex items-center justify-center select-none border border-outline`}
+          style={{background:avatarColor,color:readableForeground(avatarColor)}} className={`w-full h-full rounded-full ${paletteClass} text-ink font-semibold flex items-center justify-center select-none border border-outline`}
         >
           <span>{initials}</span>
         </div>
 
-        {resolvedSrc && !failed && (
+        {near && resolvedSrc && !failed && (
           <img
             src={resolvedSrc}
             alt={title}
-            loading="lazy"
+            loading="eager"
             decoding="async"
             onError={() => {
               setFailed(true);

@@ -1,3 +1,4 @@
+import { showMessageNotification } from './notificationSettingsStore';
 import { mergeMessagePage } from '../utils/messageMerge';
 import { appFetch as fetch, createAppSocket } from './appTransport';
 import {
@@ -143,9 +144,10 @@ export class TelegramService {
   private isLoadingMessagesByChat: Record<string, boolean> = {};
   private isLoadingOlderByChat: Record<string, boolean> = {};
   private hasMoreMessagesByChat: Record<string, boolean> = {};
+  private sharedMediaErrors: Record<string, string> = {};
   private sharedMediaByChat: Record<
     string,
-    { media?: TelegramMessage[]; files?: TelegramMessage[]; voice?: TelegramMessage[] }
+    { media?: TelegramMessage[]; files?: TelegramMessage[]; voice?: TelegramMessage[]; links?: TelegramMessage[]; music?: TelegramMessage[] }
   > = {};
   private isLoadingSharedMediaByChat: Record<string, boolean> = {};
   private hasMoreSharedMediaByChat: Record<string, boolean> = {};
@@ -614,7 +616,7 @@ export class TelegramService {
         this.chats = nextChats;
 
         if (!msg.isOutgoing) {
-          soundEffects.playReceive();
+          if (!updatedChat.isMuted) { soundEffects.playReceive(); showMessageNotification(chatId, updatedChat.title, msg.text || summaryText); }
           if (isViewingNow) {
             void this.markChatAsRead(chatId);
           }
@@ -983,15 +985,17 @@ export class TelegramService {
     return Boolean(this.isLoadingOlderByChat[chatId]);
   }
 
-  public getSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice'): TelegramMessage[] | undefined {
+  public getSharedMediaError(chatId: string, filter: string): string | undefined { return this.sharedMediaErrors[`${chatId}:${filter}`]; }
+
+  public getSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music'): TelegramMessage[] | undefined {
     return this.sharedMediaByChat[chatId]?.[filter];
   }
 
-  public isLoadingSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice'): boolean {
+  public isLoadingSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music'): boolean {
     return Boolean(this.isLoadingSharedMediaByChat[`${chatId}:${filter}`]);
   }
 
-  public hasMoreSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice'): boolean {
+  public hasMoreSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music'): boolean {
     return Boolean(this.hasMoreSharedMediaByChat[`${chatId}:${filter}`]);
   }
 
@@ -1424,7 +1428,7 @@ export class TelegramService {
 
   public async loadChatSharedMedia(
     chatId: string,
-    filter: 'media' | 'files' | 'voice',
+    filter: 'media' | 'files' | 'voice' | 'links' | 'music',
     append: boolean = false,
     autoChainRemaining: number = 0
   ): Promise<TelegramMessage[]> {
@@ -1433,6 +1437,7 @@ export class TelegramService {
     if (this.isLoadingSharedMediaByChat[key]) {
       return this.sharedMediaByChat[chatId]?.[filter] || [];
     }
+    delete this.sharedMediaErrors[key];
     this.isLoadingSharedMediaByChat[key] = true;
     this.notify();
 
@@ -1444,8 +1449,8 @@ export class TelegramService {
       const res = await fetch(
         `/api/tg/chats/${encodeURIComponent(chatId)}/media?${qs.toString()}`
       );
-      if (!res.ok) return this.sharedMediaByChat[chatId]?.[filter] || [];
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not load shared media.');
       const incoming = Array.isArray(data.items) ? (data.items as TelegramMessage[]) : [];
       const prev = append ? this.sharedMediaByChat[chatId]?.[filter] || [] : [];
       const seen = new Set(prev.map((m) => m.id));
@@ -1461,7 +1466,8 @@ export class TelegramService {
       }
       shouldAutoChain = hasMore && autoChainRemaining > 0;
       return merged;
-    } catch {
+    } catch (error) {
+      this.sharedMediaErrors[key] = (error as Error).message;
       return this.sharedMediaByChat[chatId]?.[filter] || [];
     } finally {
       this.isLoadingSharedMediaByChat[key] = false;
@@ -2978,6 +2984,7 @@ export class TelegramService {
     callId?: string;
     title?: string;
     participantsCount?: number;
+    scheduledStart?: number;
     participants: Array<{
       id: string;
       name: string;

@@ -1,3 +1,4 @@
+import { NotificationPreferences } from './NotificationPreferences';
 import React, { useState, useEffect } from 'react';
 import {
   X,
@@ -953,12 +954,7 @@ export const SettingsModal: React.FC<Props> = ({
             )}
 
             {activeCategory === 'notifications' && (
-              <div className="p-4 rounded-2xl bg-surface-low dark:bg-elevated border border-outline dark:border-outline space-y-2">
-                <h4 className="text-xs font-semibold">Audio Alerts</h4>
-                <p className="text-xs text-muted dark:text-muted">
-                  Subtle Web Audio chimes play when live Telegram messages arrive or reactions are added.
-                </p>
-              </div>
+              <NotificationPreferences />
             )}
           </div>
         </div>

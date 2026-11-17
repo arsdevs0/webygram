@@ -1,16 +1,16 @@
 /* Shared Flow-inspired surfaces and controls. Palette values come from modSettingsStore. */
 body { background: var(--tg-bg-main); color: var(--tg-text); }
 .tg-app { font-size: 14px; line-height: 1.45; }
-.tg-app :where(button, input, select, textarea, a) { transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease; }
+.tg-app :where(button, input, select, textarea, a) { transition: transform 120ms ease, opacity 120ms ease; }
 .tg-app :where(button) { cursor: pointer; }
 .tg-app :where(button:disabled) { cursor: default; }
 .tg-app :where(input, select, textarea) { accent-color: var(--tg-accent); }
 .tg-app :where(input, textarea)::placeholder { color: var(--tg-muted); opacity: .8; }
-.tg-app .text-primary { color: var(--tg-primary-text); }
-.tg-app .bg-primary { color: var(--tg-on-primary); }
-.tg-app .bg-primary > .text-primary { color: inherit; }
-.tg-app .bg-primary :where(.text-white, .text-ink) { color: inherit; }
-.tg-app .bg-primary > .bg-white { background: var(--tg-on-primary); }
+.text-primary { color: var(--tg-primary-text); }
+.bg-primary { color: var(--tg-on-primary); }
+.bg-primary > .text-primary { color: inherit; }
+.bg-primary :where(.text-white, .text-ink) { color: inherit; }
+.bg-primary > .bg-white { background: var(--tg-on-primary); }
 html[data-interface="flow"] .tg-app :where(button.bg-primary) { border-radius: 999px; font-weight: 600; }
 .tg-app :where(.shadow-xl, .shadow-2xl) { box-shadow: 0 8px 28px #00000024; }
 .tg-app :where([class*="backdrop-blur"]) { backdrop-filter: none; }
@@ -128,7 +128,7 @@ html[data-interface="telegram"] .tg-chat-row .text-\[14px\] { font-size: 16px; }
 html[data-interface="telegram"] .tg-chat-row .text-\[12\.5px\] { font-size: 14px; }
 .tg-call[data-video="true"] { --tg-bg-panel: #141414; --tg-bg-elevated: #303030; --tg-text: #ffffff; --tg-muted: #dddddd; --tg-border: #444444; }
 .tg-call { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
-.tg-app .bg-primary .text-white\/80 { color: var(--tg-on-primary); opacity: .85; }
+.bg-primary .text-white\/80 { color: var(--tg-on-primary); opacity: .85; }
 .tg-app .hover\:bg-primary:hover { color: var(--tg-on-primary); }
 .tg-app .tg-search-result { display: flex; align-items: center; gap: 12px; padding: 14px 16px; min-height: 76px; width: 100%; text-align: left; }
 .tg-app .tg-search-result:hover { background: var(--tg-hover); }

@@ -1,3 +1,4 @@
+import { mediaRetrySource } from '../../utils/mediaRetrySource';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
@@ -19,6 +20,8 @@ import {
   ZoomIn,
   ZoomOut,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { MediaAttachment } from '../../types/telegram';
 import { telegramService } from '../../services/telegramService';
@@ -33,6 +36,9 @@ interface Props {
   messageId: string;
   isProtected?: boolean;
   onClose: () => void;
+  gallery?: Array<{media:MediaAttachment;messageId:string}>;
+  onNavigate?: (media:MediaAttachment,messageId:string) => void;
+  onForward?: (chatId:string,messageId:string) => void;
 }
 
 export const MediaViewerModal: React.FC<Props> = ({
@@ -42,6 +48,9 @@ export const MediaViewerModal: React.FC<Props> = ({
   messageId,
   isProtected = false,
   onClose,
+  gallery = [],
+  onNavigate,
+  onForward,
 }) => {
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [isTimerFrozen, setIsTimerFrozen] = useState(false);
@@ -66,6 +75,12 @@ export const MediaViewerModal: React.FC<Props> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   useEscapeDismiss(Boolean(media), onClose);
+  const index = gallery.findIndex(item => item.messageId === messageId);
+  const swipe = useRef<{x:number;y:number} | undefined>(undefined);
+  const navigate = (offset:number) => { const item=gallery[index+offset]; if(item)onNavigate?.(item.media,item.messageId); };
+  useEffect(() => { const key=(event:KeyboardEvent) => { if(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)return; if(event.key==='ArrowLeft')navigate(-1); else if(event.key==='ArrowRight')navigate(1); }; window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key); },[gallery,index,onNavigate]);
+  useEffect(() => { if(media?.type==='file' && !media.mimeType?.startsWith('audio/'))setMediaLoaded(true); },[media]);
+  useEffect(() => { if(!media || mediaLoaded || mediaError)return;const timer=setTimeout(()=>setMediaError(true),20000);return()=>clearTimeout(timer); },[media,mediaLoaded,mediaError,retryNonce]);
 
   useEffect(() => {
     closeButtonRef.current?.focus();
@@ -156,6 +171,7 @@ export const MediaViewerModal: React.FC<Props> = ({
   };
 
   const handleForwardBypass = async () => {
+    if(onForward){onForward(chatId,messageId);return;}
     const dest = telegramService.getTargetGroup() ? 'target' : 'me';
     const res = await telegramService.forwardMessage(
       chatId,
@@ -185,7 +201,7 @@ export const MediaViewerModal: React.FC<Props> = ({
       role="dialog"
       aria-modal="true"
       aria-label={media.fileName || 'Media viewer'}
-      className="tg-media-viewer fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 no-select"
+      className="tg-media-viewer fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-4 bg-black/85 no-select"
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
       onContextMenu={(e) => !allowBypass && isProtected && e.preventDefault()}
     >
@@ -252,7 +268,7 @@ export const MediaViewerModal: React.FC<Props> = ({
                 title={
                   telegramService.getTargetGroup()
                     ? `Forward to ${telegramService.getTargetGroup()?.title}`
-                    : 'Forward to Saved Messages'
+                    : onForward ? 'Forward message or album' : 'Forward to Saved Messages'
                 }
               >
                 <Forward className="w-3.5 h-3.5 text-primary" />
@@ -311,9 +327,12 @@ export const MediaViewerModal: React.FC<Props> = ({
           </div>
         </div>
 
+        {index >= 0 && gallery.length > 1 && <p className="tg-gallery-counter">{index+1} of {gallery.length}</p>}
         {actionNotice && <p role="status" className="mb-2 text-sm text-white text-center">{actionNotice}</p>}
         {/* Media Viewport */}
-        <div className={`tg-media-stage relative flex-1 flex items-center justify-center w-full min-h-40 max-h-[76dvh] rounded-2xl border border-[#1E2E4E] bg-black ${zoomed ? 'overflow-auto' : 'overflow-hidden'}`}>
+        <div onTouchStart={event=>{const touch=event.touches[0];swipe.current={x:touch.clientX,y:touch.clientY};}} onTouchEnd={event=>{const start=swipe.current,touch=event.changedTouches[0];swipe.current=undefined;if(!start||zoomed)return;const x=touch.clientX-start.x,y=touch.clientY-start.y;if(Math.abs(x)>65&&Math.abs(y)<50)navigate(x<0?1:-1);}} className={`tg-media-stage relative flex-1 flex items-center justify-center w-full min-h-40 max-h-[76dvh] rounded-2xl border border-[#1E2E4E] bg-black ${zoomed ? 'overflow-auto' : 'overflow-hidden'}`}>
+          {index > 0 && <button type="button" className="tg-gallery-arrow prev" aria-label="Previous media" onClick={()=>navigate(-1)}><ChevronLeft /></button>}
+          {index >= 0 && index < gallery.length-1 && <button type="button" className="tg-gallery-arrow next" aria-label="Next media" onClick={()=>navigate(1)}><ChevronRight /></button>}
           {!mediaLoaded && !mediaError && !hasExpired && <div role="status" aria-label="Loading media" className="absolute inset-0 flex items-center justify-center pointer-events-none"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}
           {hasExpired && !preventTTL ? (
             <div className="flex flex-col items-center justify-center p-8 text-center text-muted space-y-3">
@@ -353,14 +372,16 @@ export const MediaViewerModal: React.FC<Props> = ({
                     <span>Retry</span>
                   </button>
                 </div>
-              ) : media.type === 'video' ? (
+              ) : media.type === 'voice' || media.mimeType?.startsWith('audio/') ? (
+                <div className="tg-viewer-document"><h2>{media.fileName || 'Voice message'}</h2><audio controls preload="metadata" src={mediaRetrySource(media.url, retryNonce)} onLoadedData={() => setMediaLoaded(true)} onError={() => setMediaError(true)} /><a href={media.url} download={media.fileName}>Download audio</a></div>
+              ) : media.type === 'file' ? (
+                <div className="tg-viewer-document"><h2>{media.fileName || 'Document'}</h2><p>{media.fileSize || ''}</p><a href={media.url} target="_blank" rel="noopener noreferrer">Open document</a><a href={media.url} download={media.fileName}>Download file</a></div>
+              ) : media.type === 'video' || media.type === 'gif' ? (
                 <div className="relative flex items-center justify-center max-h-[74vh] max-w-full">
                   <video
                     ref={videoRef}
                     src={
-                      retryNonce > 0
-                        ? `${media.url}${media.url.includes('?') ? '&' : '?'}r=${retryNonce}`
-                        : media.url
+                      mediaRetrySource(media.url, retryNonce)
                     }
                     poster={media.thumbnailUrl}
                     controls
@@ -411,9 +432,7 @@ export const MediaViewerModal: React.FC<Props> = ({
               ) : (
                 <img
                   src={
-                    retryNonce > 0
-                      ? `${media.url}${media.url.includes('?') ? '&' : '?'}r=${retryNonce}`
-                      : media.url
+                    mediaRetrySource(media.url, retryNonce)
                   }
                   alt={media.fileName || 'Telegram Media'}
                   onError={() => setMediaError(true)}

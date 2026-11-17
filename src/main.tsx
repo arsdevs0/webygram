@@ -1,3 +1,4 @@
+import './services/modSettingsStore';
 import {createRoot} from 'react-dom/client';
 import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 import { initializeBrowserSession } from './services/browserSession';
@@ -6,7 +7,7 @@ import './flow-design.css';
 import './telegram-next.css';
 
 const root = createRoot(document.getElementById('root')!);
-root.render(<div role="status" className="h-dvh flex items-center justify-center bg-canvas text-ink">Opening your Webygram…</div>);
+root.render(<div role="status" className="tg-boot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4 3 11l7 3 3 7 7-17ZM10 14 20 4" /></svg><strong>Webygram</strong><span>Connecting to Telegram…</span></div>);
 initializeBrowserSession().then(async () => {
   const { default: App } = await import('./App.tsx');
   root.render(<AppErrorBoundary><App /></AppErrorBoundary>);

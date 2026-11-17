@@ -327,9 +327,7 @@ html.dark .dark\:bg-\[\#182533\] {
 
 /* 60 FPS Virtualization & GPU Compositing for Chat Timeline and Dialog List */
 .tg-message-row {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 74px;
-  contain: layout style;
+  contain: style;
 }
 
 .tg-chat-row {

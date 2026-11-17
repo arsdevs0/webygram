@@ -152,6 +152,7 @@ export interface GifItem {
 }
 
 export interface MediaAttachment {
+  isRoundVideo?: boolean;
   type: 'photo' | 'video' | 'voice' | 'file' | 'sticker' | 'gif';
   url: string;
   thumbnailUrl?: string;

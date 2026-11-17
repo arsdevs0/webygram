@@ -5,10 +5,10 @@ function harness(initial: any = {}) {
   let state = initial;
   const callbacks = new Map<string, (event: any) => void>();
   const pending: Array<() => void> = [];
-  let pushes = 0, backs = 0;
+  let pushes = 0, backs = 0, now = 0;
   const nav = createBackNavigation({ history: { get state() { return state; }, pushState(next) { state = next; pushes++; }, back() { backs++; } },
-    listen(type, callback) { callbacks.set(type, callback); return () => { callbacks.delete(type); }; }, defer(callback) { pending.push(callback); } });
-  return { nav, pushes: () => pushes, backs: () => backs,
+    listen(type, callback) { callbacks.set(type, callback); return () => { callbacks.delete(type); }; }, defer(callback) { pending.push(callback); }, now: () => now });
+  return { nav, advance: (milliseconds: number) => { now += milliseconds; }, pushes: () => pushes, backs: () => backs,
     pop(next = {}) { state = next; callbacks.get('popstate')?.({ state }); while (pending.length) pending.shift()!(); },
     escape() { let prevented = false, stopped = false; callbacks.get('keydown')?.({ key: 'Escape', defaultPrevented: false, preventDefault() { prevented = true; }, stopImmediatePropagation() { stopped = true; } }); return { prevented, stopped }; } };
 }
@@ -42,4 +42,17 @@ test('a busy surface consumes Back while staying open, and reload reuses the gua
   const h = harness({ __webygramBack: true, existingState: 3 }); h.nav.add(() => {});
   assert.equal(h.pushes(), 0); h.pop(); assert.equal(h.pushes(), 1);
   h.nav.dispose(); assert.deepEqual(h.escape(), { prevented: false, stopped: false });
+});
+
+test('root guard survives isolated and slow repeated Back presses', () => {
+ const h=harness();let hints=0;h.nav.setExitProtection(()=>hints++);
+ h.pop();h.advance(900);h.pop();h.advance(900);h.pop();
+ assert.equal(hints,3);assert.equal(h.backs(),0);assert.equal(h.pushes(),4);
+});
+test('only rapid double Back at root releases the browser history', () => {
+ const h=harness();h.nav.setExitProtection(()=>{});h.pop();h.advance(350);h.pop();assert.equal(h.backs(),1);
+});
+test('closing a chat does not count as the first exit Back', () => {
+ const h=harness();let hints=0;h.nav.setExitProtection(()=>hints++);h.nav.setFallback(()=>h.nav.setFallback());
+ h.pop();h.advance(50);h.pop();assert.equal(hints,1);assert.equal(h.backs(),0);
 });

@@ -1,3 +1,4 @@
+import { notificationSettingsStore } from './notificationSettingsStore';
 /**
  * Webygram Native Web Audio Synthesized Sound Effects & Call Tones
  * Auto-unlocks on user gesture for crisp audible playback everywhere.
@@ -9,6 +10,7 @@ class SoundEffectPlayer {
   private incomingRingTimer: number | null = null;
 
   constructor() {
+    notificationSettingsStore.subscribe(() => { if (!notificationSettingsStore.get().soundsEnabled) { this.stopIncomingRing(); this.stopRingbackTone(); } });
     if (typeof window !== 'undefined') {
       const unlock = () => {
         this.initCtx();
@@ -21,7 +23,7 @@ class SoundEffectPlayer {
   }
 
   public initCtx(): AudioContext | null {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === 'undefined' || !notificationSettingsStore.get().soundsEnabled) return null;
     if (!this.ctx) {
       const AudioCtx =
         window.AudioContext ||
@@ -63,7 +65,7 @@ class SoundEffectPlayer {
   }
 
   playReceive(enabled: boolean = true) {
-    if (!enabled) return;
+    if (!enabled || !notificationSettingsStore.get().notificationsEnabled) return;
     try {
       const ctx = this.initCtx();
       if (!ctx) return;

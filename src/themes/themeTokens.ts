@@ -59,3 +59,12 @@ export function resolveFlowPalette(palette: FlowPalette, mode: 'light' | 'dark' 
 }
 
 export function findFlowPalette(id: string) { return FLOW_PALETTES.find(p => p.id === id); }
+
+/** Choose a nearby foreground that remains readable on every related surface. */
+export function readableText(preferred:string,surfaces:string[],minimum=4.5):string {
+  if(surfaces.every(surface=>contrastRatio(preferred,surface)>=minimum))return preferred;
+  const score=(color:string)=>Math.min(...surfaces.map(surface=>contrastRatio(color,surface)));
+  const target=score('#111111')>score('#ffffff')?'#111111':'#ffffff';
+  for(let step=1;step<=40;step++){const color=mixColor(target,preferred,step/40);if(score(color)>=minimum)return color;}
+  return target;
+}

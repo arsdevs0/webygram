@@ -29,7 +29,7 @@ Keep one app tab open, connected and awake for local auto-save, anti-delete, aut
 
 Forwarding has a recipient picker and preview with sender-name/caption controls, comments, silent sending and scheduling. Caption removal also hides sender names, as Telegram requires. Partial retries preserve delivered destinations and Telegram random IDs during the same app/engine session.
 
-Browser/device Back and Escape close the current menu or panel, then return from the chat to the list. At the root, Back can leave the app. The mobile bar has Chats, Contacts, Settings and You; the account sheet, grouped settings and pill folders use the requested new layout in both themes. Flow themes remain selectable.
+Browser/device Back and Escape close the current menu or panel, then return from the chat to the list. At the root, one Back keeps the app open and prompts for a quick second press. Two root Back presses within 700 ms can leave the app; closing a chat/panel does not count toward exit. The mobile bar has Chats, Contacts, Settings and You; the account sheet, grouped settings and pill folders use the requested new layout in both themes. Flow themes remain selectable.
 
 ## Appearance and audio
 
@@ -64,6 +64,7 @@ With a locally installed Playwright module and Chrome, run:
 $env:PLAYWRIGHT_MODULE = 'absolute/path/to/playwright/index.mjs'
 node scripts/test-telegram-ui.mjs
 node scripts/test-telegram-audio.mjs
+node scripts/test-telegram-stress.mjs
 ```
 
 The UI test covers forwarding, Back, retries, both themes and mobile layouts.
@@ -72,3 +73,17 @@ and a synthetic microphone. It verifies matching fingerprints, bidirectional
 audio, live effects, mute, repeated calls, video negotiation, recording/retry/cancel
 and the actual Opus worker. These are local tests; a call to a signed-in native
 Telegram mobile client still needs device/account verification.
+
+## Scroll, media and voice update
+
+The compose pencil opens a searchable contact picker with New Group/New Channel actions. Archive stays directly accessible above the chat list. Each list owns its scroll viewport. The latest-message arrow stays outside message content; layout changes keep a chat at the latest message until the user scrolls away.
+
+Telegram album IDs survive serialization, rendering, preview and forwarding. Chat profiles share Media, Files, Links, Music and Voice tabs with pagination, retry feedback and open/play/download actions. The viewer supports previous/next buttons, horizontal swipes and keyboard arrows. Profile photos open in the viewer, and personal shared media uses its own source chat.
+
+Images and avatar fetches wait until near the viewport; retries preserve embedded/blob/signed URLs. Offscreen animated-video previews pause. Default light/dark surfaces use Telegram colors, and semantic foregrounds keep controls readable across selectable palettes. Notifications and Sounds now has independent, saved message-alert and app-sound switches; individual chat mute also suppresses incoming alerts.
+
+Active group/channel voice chats show a live or scheduled banner and participant info, refreshed while the app is visible. Joining group calls still requires native Telegram; this banner does not implement the group-call transport.
+
+Local voice processing now locks bins to actual spectral peaks, crossfades consonants in the complex spectrum and uses gentler EQ. Unvoiced audio is regression-tested for waveform preservation. GitHub realtime AI projects such as [w-okada](https://github.com/w-okada/voice-changer/blob/master/README_en.md) use a separate conversion server/high-performance runtime; that is not bundled into this mobile-local build.
+
+The stress test covers long lists/histories, touch scrolling, group/channel arrows, album forwarding, shared-media playback/opening, gallery navigation, every selectable palette, saved alert controls and browser exit timing. It uses simulated Telegram RPCs and actual browser rendering, media decode and WebRTC; device/account checks remain separate.

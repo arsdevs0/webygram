@@ -1,3 +1,5 @@
+import { Avatar } from '../common/Avatar';
+import { SharedMediaTabs } from './SharedMediaTabs';
 import React, { useState, useEffect } from 'react';
 import {
   X,
@@ -92,43 +94,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     };
   }, [isOpen, userId, contextChatId, fallbackName]);
 
-  useEffect(() => {
-    if (!isOpen || !userId) return;
-    let cancelled = false;
-    setIsLoadingShared(true);
-    telegramService
-      .loadChatSharedMedia(userId, activeTab, false)
-      .then((msgs) => {
-        if (cancelled) return;
-        if (msgs.length > 0) {
-          setSharedItems(msgs);
-        } else if (contextChatId && contextChatId !== userId) {
-          const fromGroup = telegramService
-            .getMessages(contextChatId)
-            .filter((m) => m.senderId === userId && m.media)
-            .filter((m) => {
-              if (activeTab === 'media') {
-                return m.media?.type === 'photo' || m.media?.type === 'video' || m.media?.type === 'gif';
-              }
-              if (activeTab === 'files') return m.media?.type === 'file';
-              if (activeTab === 'voice') return m.media?.type === 'voice';
-              return false;
-            });
-          setSharedItems(fromGroup);
-        } else {
-          setSharedItems([]);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setSharedItems([]);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingShared(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, userId, contextChatId, activeTab]);
 
   if (!isOpen || !userId) return null;
 
@@ -212,20 +177,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             <>
               {/* Hero Card */}
               <div className="p-5 bg-surface dark:bg-surface flex flex-col items-center text-center relative">
-                <div className="w-24 h-24 rounded-full overflow-hidden bg-elevated flex items-center justify-center text-3xl font-bold text-white shadow-lg mb-3 border-2 border-outline dark:border-outline">
-                  {profile.avatarUrl ? (
-                    <img
-                      src={profile.avatarUrl}
-                      alt={profile.title}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <span>{(profile.title || 'U').substring(0, 2).toUpperCase()}</span>
-                  )}
-                </div>
+                <button type="button" aria-label="Open profile photo" className="mb-3" onClick={()=>onOpenMedia({type:'photo',url:profile.avatarUrl || '/api/tg/avatar/'+encodeURIComponent(profile.id),fileName:profile.title+' profile photo'},'avatar:'+profile.id)}><Avatar src={profile.avatarUrl} title={profile.title} id={profile.id} size="xl" /></button>
 
                 <div className="flex items-center justify-center gap-1.5 max-w-full px-2">
                   <h2 className="text-[19px] font-bold truncate">{profile.title}</h2>
@@ -386,115 +338,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 )}
               </div>
 
-              {/* Shared Media / Files / Voice Tabs */}
-              <div className="bg-surface dark:bg-surface mt-2 flex flex-col">
-                <div className="flex border-b border-outline dark:border-white/[0.06]">
-                  {(
-                    [
-                      { id: 'media', label: 'Media', icon: ImageIcon },
-                      { id: 'files', label: 'Files', icon: FileText },
-                      { id: 'voice', label: 'Voice', icon: Mic },
-                    ] as const
-                  ).map((tab) => {
-                    const Icon = tab.icon;
-                    const active = activeTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-[13px] font-medium border-b-2 transition-colors cursor-pointer ${
-                          active
-                            ? 'border-primary text-primary'
-                            : 'border-transparent text-muted dark:text-muted hover:text-ink dark:hover:text-white'
-                        }`}
-                      >
-                        <Icon size={15} />
-                        <span>{tab.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="p-3 min-h-[160px]">
-                  {isLoadingShared ? (
-                    <div className="py-10 flex items-center justify-center">
-                      <Loader2 size={22} className="animate-spin text-primary" />
-                    </div>
-                  ) : sharedItems.length === 0 ? (
-                    <div className="py-10 text-center text-xs text-muted dark:text-muted">
-                      No shared {activeTab} in direct history
-                    </div>
-                  ) : activeTab === 'media' ? (
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {sharedItems
-                        .filter((m) => m.media)
-                        .map((msg) => (
-                          <div
-                            key={msg.id}
-                            onClick={() => onOpenMedia(msg.media!, msg.id)}
-                            style={
-                              msg.media!.inlineThumb
-                                ? {
-                                    backgroundImage: `url(${msg.media!.inlineThumb})`,
-                                    backgroundSize: 'cover',
-                                    backgroundPosition: 'center',
-                                  }
-                                : undefined
-                            }
-                            className="aspect-square rounded-lg overflow-hidden bg-elevated dark:bg-canvas relative cursor-pointer group border border-outline dark:border-outline"
-                          >
-                            <img
-                              src={msg.media!.thumbnailUrl || msg.media!.inlineThumb || msg.media!.url}
-                              alt=""
-                              decoding="async"
-                              onError={(e) => {
-                                const img = e.currentTarget;
-                                if (!img.dataset.fallback) {
-                                  img.dataset.fallback = '1';
-                                  img.src = msg.media!.inlineThumb || msg.media!.url;
-                                }
-                              }}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                            />
-                            {msg.media!.type === 'video' && (
-                              <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                                <Play size={20} className="text-white fill-white" />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {sharedItems
-                        .filter((m) => m.media)
-                        .map((msg) => (
-                          <div
-                            key={msg.id}
-                            onClick={() => onOpenMedia(msg.media!, msg.id)}
-                            className="flex items-center justify-between p-2.5 rounded-xl bg-surface-low dark:bg-canvas hover:bg-hover dark:hover:bg-hover border border-outline/70 dark:border-transparent cursor-pointer transition-colors"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
-                                {activeTab === 'voice' ? <Mic size={17} /> : <FileText size={17} />}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-medium truncate">
-                                  {msg.media!.fileName || (activeTab === 'voice' ? 'Voice Message' : 'Document')}
-                                </p>
-                                <span className="text-[10px] text-muted dark:text-muted">
-                                  {msg.media!.fileSize || msg.timestamp}
-                                </span>
-                              </div>
-                            </div>
-                            <Download size={15} className="text-muted dark:text-muted shrink-0" />
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <SharedMediaTabs key={userId} chatId={userId} messages={telegramService.getMessages(userId)} onOpenMedia={onOpenMedia} />
             </>
           )}
         </div>

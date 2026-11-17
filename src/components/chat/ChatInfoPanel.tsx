@@ -1,3 +1,4 @@
+import { SharedMediaTabs } from './SharedMediaTabs';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
@@ -784,11 +785,9 @@ export const ChatInfoPanel: React.FC<Props> = ({
         {/* Centered Profile Hero */}
         <div className={`flex flex-col items-center text-center space-y-2 pt-1 ${chat.isDeletedChat ? 'opacity-70' : ''}`}>
           <div
-            className={`relative ${chat.type === 'user' && onOpenUserProfile ? 'cursor-pointer' : ''}`}
+            className="relative cursor-pointer" role="button" tabIndex={0} aria-label="Open profile photo" onKeyDown={event=>{if(event.target===event.currentTarget && (event.key==='Enter' || event.key===' ')){event.preventDefault();onOpenMedia({type:'photo',url:chat.avatarUrl || '/api/tg/avatar/'+encodeURIComponent(chat.id),fileName:displayTitle+' profile photo'},'avatar:'+chat.id);}}}
             onClick={() => {
-              if (chat.type === 'user' && onOpenUserProfile) {
-                onOpenUserProfile(chat.id);
-              }
+              onOpenMedia({type:'photo',url:chat.avatarUrl || '/api/tg/avatar/'+encodeURIComponent(chat.id),fileName:displayTitle+' profile photo'},'avatar:'+chat.id);
             }}
           >
             <Avatar
@@ -873,6 +872,8 @@ export const ChatInfoPanel: React.FC<Props> = ({
             </div>
           )}
         </div>
+
+        <SharedMediaTabs key={chat.id} chatId={chat.id} messages={messages} onOpenMedia={onOpenMedia} onOpenChatByLink={onOpenChatByLink} />
 
         {/* FULL OFFICIAL TELEGRAM EDIT GROUP / CHANNEL SETTINGS PANEL (ADMIN ONLY) */}
         {showEditSection && isGroupOrChannel && canEdit && (
@@ -1413,280 +1414,6 @@ export const ChatInfoPanel: React.FC<Props> = ({
             )}
           </div>
         )}
-
-        {/* OFFICIAL TELEGRAM SHARED MEDIA / FILES / LINKS / VOICE TABS (ALWAYS OPEN) */}
-        <div className="rounded-2xl bg-surface-low dark:bg-elevated border border-outline dark:border-outline overflow-hidden">
-          <div className="grid grid-cols-4 border-b border-outline dark:border-outline bg-white/60 dark:bg-elevated">
-            {(
-              [
-                ['media', 'Media', mediaMessages.length, Image],
-                ['files', 'Files', fileMessages.length, FileText],
-                ['links', 'Links', sharedLinks.length, Link2],
-                ['voice', 'Voice', voiceMessages.length, Mic],
-              ] as const
-            ).map(([key, label, count, IconComp]) => {
-              const active = activeMediaTab === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setActiveMediaTab(key)}
-                  className={`py-2.5 px-1 flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold border-b-2 transition-colors cursor-pointer ${
-                    active
-                      ? 'border-primary text-primary bg-primary/5'
-                      : 'border-transparent text-muted dark:text-muted hover:text-ink dark:hover:text-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-1">
-                    <IconComp className="w-3.5 h-3.5" />
-                    <span>{label}</span>
-                  </div>
-                  <span className="text-[10px] font-mono tabular-nums opacity-80">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="p-2.5">
-            {activeMediaTab === 'media' && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-[11px] font-medium text-muted dark:text-muted tabular-nums">
-                    {mediaMessages.length} photos &amp; videos
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void telegramService.loadChatSharedMedia(chat.id, 'media', false)}
-                    className="text-[11px] text-primary hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${sharedMediaState.loading ? 'animate-spin' : ''}`} />
-                    <span>Sync All</span>
-                  </button>
-                </div>
-
-                {sharedMediaState.loading && mediaMessages.length === 0 ? (
-                  <div className="py-6 flex items-center justify-center gap-2 text-xs text-muted dark:text-muted">
-                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                    <span>Fetching all group media from Telegram...</span>
-                  </div>
-                ) : mediaMessages.length > 0 ? (
-                  <>
-                    <div
-                      onScroll={(e) => {
-                        const el = e.currentTarget;
-                        if (
-                          el.scrollHeight - el.scrollTop - el.clientHeight < 220 &&
-                          sharedMediaState.hasMore &&
-                          !sharedMediaState.loading
-                        ) {
-                          void telegramService.loadChatSharedMedia(chat.id, 'media', true, 6);
-                        }
-                      }}
-                      className="grid grid-cols-3 gap-1.5 max-h-[520px] overflow-y-auto pr-0.5"
-                    >
-                      {mediaMessages.map((msg) => {
-                        const hiResThumb =
-                          msg.media!.thumbnailUrl ||
-                          (msg.media!.type === 'photo'
-                            ? msg.media!.url
-                            : `${msg.media!.url}${msg.media!.url.includes('?') ? '&' : '?'}thumb=1`);
-                        const instantPreview = msg.media!.inlineThumb || hiResThumb;
-                        return (
-                          <div
-                            key={msg.id}
-                            onClick={() => onOpenMedia(msg.media!, msg.id)}
-                            style={
-                              msg.media!.inlineThumb
-                                ? {
-                                    backgroundImage: `url(${msg.media!.inlineThumb})`,
-                                    backgroundSize: 'cover',
-                                    backgroundPosition: 'center',
-                                  }
-                                : undefined
-                            }
-                            className="relative aspect-square rounded-lg overflow-hidden bg-surface border border-outline dark:border-outline cursor-pointer group/tile"
-                          >
-                            <img
-                              src={hiResThumb || instantPreview}
-                              alt={msg.media!.fileName || 'Shared'}
-                              decoding="async"
-                              onError={(e) => {
-                                const img = e.currentTarget;
-                                if (!img.dataset.fallback) {
-                                  img.dataset.fallback = '1';
-                                  img.src = msg.media!.inlineThumb || msg.media!.url;
-                                }
-                              }}
-                              className="w-full h-full object-cover group-hover/tile:scale-105 transition-transform"
-                            />
-                            {(msg.media!.type === 'video' || msg.media!.type === 'gif') && (
-                              <span className="absolute inset-0 flex items-center justify-center bg-black/25">
-                                <span className="w-7 h-7 rounded-full bg-black/60 flex items-center justify-center">
-                                  <Play className="w-3.5 h-3.5 text-white fill-white ml-0.5" />
-                                </span>
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {sharedMediaState.hasMore && (
-                      <button
-                        type="button"
-                        disabled={sharedMediaState.loading}
-                        onClick={() => void telegramService.loadChatSharedMedia(chat.id, 'media', true, 8)}
-                        className="w-full py-1.5 rounded-xl bg-surface dark:bg-surface hover:bg-hover dark:hover:bg-hover border border-outline dark:border-outline text-xs font-semibold text-primary flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        {sharedMediaState.loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                        <span>{sharedMediaState.loading ? 'Auto-syncing all group media...' : 'Load More Media'}</span>
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-xs text-muted dark:text-muted text-center py-4">
-                    No shared photos or videos in this chat yet
-                  </p>
-                )}
-              </div>
-            )}
-
-            {activeMediaTab === 'files' && (
-              <div
-                onScroll={(e) => {
-                  const el = e.currentTarget;
-                  if (
-                    el.scrollHeight - el.scrollTop - el.clientHeight < 140 &&
-                    sharedMediaState.hasMore &&
-                    !sharedMediaState.loading
-                  ) {
-                    void telegramService.loadChatSharedMedia(chat.id, 'files', true, 2);
-                  }
-                }}
-                className="space-y-1.5 max-h-72 overflow-y-auto"
-              >
-                {fileMessages.length > 0 ? (
-                  <>
-                    {fileMessages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className="p-2 rounded-xl bg-surface dark:bg-surface border border-outline dark:border-outline flex items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate font-medium">{msg.media?.fileName || 'Document'}</p>
-                          {msg.media?.fileSize && (
-                            <p className="text-[10px] text-muted tabular-nums">{msg.media.fileSize}</p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => ayuGramEngine.downloadMedia(msg.media!)}
-                          className="p-1.5 rounded-lg bg-primary/10 text-primary cursor-pointer shrink-0"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                    {sharedMediaState.hasMore && (
-                      <button
-                        type="button"
-                        disabled={sharedMediaState.loading}
-                        onClick={() => void telegramService.loadChatSharedMedia(chat.id, 'files', true, 2)}
-                        className="w-full py-1.5 rounded-xl bg-surface dark:bg-surface border border-outline dark:border-outline text-xs font-semibold text-primary cursor-pointer"
-                      >
-                        {sharedMediaState.loading ? 'Auto-loading...' : 'Load More Files'}
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-xs text-muted dark:text-muted text-center py-4">
-                    No shared files found
-                  </p>
-                )}
-              </div>
-            )}
-
-            {activeMediaTab === 'links' && (
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {sharedLinks.length > 0 ? (
-                  sharedLinks.map((lnk) => (
-                    <div
-                      key={lnk.id}
-                      className="p-2 rounded-xl bg-surface dark:bg-surface border border-outline dark:border-outline space-y-1.5 text-xs"
-                    >
-                      <a
-                        href={lnk.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-between gap-2 text-primary hover:underline font-medium"
-                      >
-                        <span className="truncate">{lnk.raw}</span>
-                        <ExternalLink className="w-3 h-3 shrink-0" />
-                      </a>
-                      {lnk.isTelegram && (
-                        <div className="flex items-center gap-1.5">
-                          {onOpenChatByLink && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenChatByLink(lnk.raw)}
-                              className="px-2 py-0.5 rounded-md bg-primary/15 text-primary text-[10.5px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-primary/25"
-                            >
-                              <MessageSquare className="w-2.5 h-2.5" />
-                              <span>Open in App</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                const resolved = await telegramService.resolveTargetGroupByLink(lnk.raw);
-                                setTargetGroup(resolved);
-                                onNotify?.(`Target group set: ${resolved.title}`);
-                              } catch (err) {
-                                onNotify?.((err as Error).message || 'Could not resolve link');
-                              }
-                            }}
-                            className="px-2 py-0.5 rounded-md bg-elevated dark:bg-elevated text-muted dark:text-muted text-[10.5px] font-medium cursor-pointer hover:text-primary"
-                          >
-                            Set Target
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-muted dark:text-muted text-center py-4">
-                    No links shared in loaded messages
-                  </p>
-                )}
-              </div>
-            )}
-
-            {activeMediaTab === 'voice' && (
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {voiceMessages.length > 0 ? (
-                  voiceMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className="p-2 rounded-xl bg-surface dark:bg-surface border border-outline dark:border-outline flex items-center justify-between text-xs"
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <Mic className="w-3.5 h-3.5 text-primary shrink-0" />
-                        <span className="font-medium tabular-nums">Voice ({msg.media?.duration || 0}s)</span>
-                      </div>
-                      <span className="text-[10px] text-muted font-mono tabular-nums">
-                        {new Date(msg.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-muted dark:text-muted text-center py-4">
-                    No voice messages
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Invite Link, Members, Permissions, Join Requests, Banned Users & Recent Actions (Groups & Channels) */}
         {isGroupOrChannel && !chat.isDeletedChat && (

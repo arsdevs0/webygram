@@ -1,3 +1,6 @@
+import { scrollToEnd } from './utils/scrollToEnd';
+import { GroupVoiceBanner } from './components/chat/GroupVoiceBanner';
+import { groupTimelineMessages, albumForwardSelection } from './utils/messageAlbums';
 import type { NativeCallInfo } from './services/nativeTelegramCall';
 import { CallRecordingPanel, CallRecordingIndicator } from './components/call/CallRecordingPanel';
 /**
@@ -163,6 +166,7 @@ export default function App() {
   const [activeViewerMedia, setActiveViewerMedia] = useState<{
     media: MediaAttachment;
     messageId: string;
+    chatId?: string;
   } | null>(null);
 
   const [replyingTo, setReplyingTo] = useState<TelegramMessage | null>(null);
@@ -206,7 +210,7 @@ export default function App() {
     else if (replyingTo) setReplyingTo(null);
     else if (activeTopicId !== null) { setActiveTopicId(null); if (activeChatId) void telegramService.loadMessages(activeChatId, 0); }
     else backToChats();
-  });
+  }, () => showToast('Press Back again quickly to exit'));
 
   const toastTimerRef = useRef<number | null>(null);
   const showToast = useCallback((msg: string) => {
@@ -229,6 +233,8 @@ export default function App() {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const messagesContentRef = useRef<HTMLDivElement | null>(null);
+  const followLatestRef = useRef(true);
   const pendingSearchJump = useRef<{ chatId: string; messageId: string } | null>(null);
   const prevScrolledChatIdRef = useRef<string | null>(null);
   const scrollRafRef = useRef<number | null>(null);
@@ -375,6 +381,9 @@ export default function App() {
         : currentMessages,
     [currentMessages, trimmedChatSearch]
   );
+  const timelineGroups = useMemo(() => groupTimelineMessages(displayedMessages), [displayedMessages]);
+  const viewerChatId = activeViewerMedia?.chatId || activeChatId || '';
+  const viewerGallery = activeViewerMedia ? [...new Map([...telegramService.getMessages(viewerChatId),...(telegramService.getSharedMedia(viewerChatId,'media') || [])].filter(item=>item.media && ['photo','video','gif'].includes(item.media.type) && !item.media.isDisappearing).map(item=>[item.id,item])).values()].sort((a,b)=>a.timestamp-b.timestamp).map(item=>({media:item.media!,messageId:item.id})) : [];
   const isLoadingChatMessages = activeChatId ? telegramService.isLoadingMessages(activeChatId) : false;
   const totalUnread = useMemo(
     () =>
@@ -457,6 +466,8 @@ export default function App() {
   useLayoutEffect(() => {
     if (!trimmedChatSearch && activeChatId) {
       if (pendingSearchJump.current?.chatId === activeChatId) return;
+      const container=messagesContainerRef.current;
+      if(!container || container.clientHeight===0)return;
       const switchedChat = prevScrolledChatIdRef.current !== activeChatId;
       const latestId = currentMessages.length > 0 ? currentMessages[currentMessages.length - 1].id : null;
       const latestChanged = latestId !== lastMsgIdRef.current;
@@ -470,12 +481,19 @@ export default function App() {
       }
       const latest = currentMessages[currentMessages.length - 1];
       if (switchedChat || (latestChanged && (!showScrollBottomRef.current || latest?.isPending))) {
-        messagesEndRef.current?.scrollIntoView({
-          behavior: 'auto',
-        });
+        followLatestRef.current = true;
+        scrollToEnd(container);
       }
     }
   }, [activeChatId, currentMessages, activeView, trimmedChatSearch]);
+
+  useLayoutEffect(() => {
+    const container = messagesContainerRef.current, content = messagesContentRef.current;
+    if (!container || !content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => { if (followLatestRef.current && container.clientHeight) scrollToEnd(container); });
+    observer.observe(container); observer.observe(content);
+    return () => observer.disconnect();
+  }, [activeChatId, activeTopicId, activeView, trimmedChatSearch]);
 
   const handleSelectChat = useCallback((chatId: string, openInfo = false) => {
     setActiveChatId(chatId);
@@ -569,6 +587,7 @@ export default function App() {
     (msgId: string) => {
       const el = document.getElementById(`msg-${msgId}`);
       if (el) {
+        followLatestRef.current = false;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.classList.add('ring-2', 'ring-primary', 'bg-primary/15', 'rounded-xl');
         window.setTimeout(() => {
@@ -599,7 +618,9 @@ export default function App() {
     pendingSearchJump.current = null;
     prevScrolledChatIdRef.current = activeChatId;
     lastMsgIdRef.current = currentMessages.at(-1)?.id || null;
-    element.scrollIntoView({ block: 'center', behavior: 'instant' });
+    followLatestRef.current = false;
+    const scroller = messagesContainerRef.current;
+    if (scroller) { const previous=scroller.style.scrollBehavior;scroller.style.scrollBehavior='auto';scroller.scrollTop += element.getBoundingClientRect().top-scroller.getBoundingClientRect().top-(scroller.clientHeight-element.clientHeight)/2;scroller.style.scrollBehavior=previous; }
     element.classList.add('tg-search-highlight');
     showScrollBottomRef.current = true; setShowScrollBottom(true);
     const timer = window.setTimeout(() => element.classList.remove('tg-search-highlight'), 2200);
@@ -658,10 +679,11 @@ export default function App() {
     if (!activeChatId) return;
     const message = telegramService.getMessages(activeChatId).find(m => m.id === msgId);
     if (!message || message.isPending || message.isDeletedBySender || !/^\d+$/.test(msgId)) { showToast('This message is not available for forwarding.'); return; }
-    setForwardPickerState({ isOpen: true, fromChatId: activeChatId, messageIds: [msgId], messages: [message] });
+    setForwardPickerState({ isOpen: true, fromChatId: activeChatId, messageIds: albumForwardSelection(telegramService.getMessages(activeChatId), message).map(item => item.id), messages: albumForwardSelection(telegramService.getMessages(activeChatId), message) });
   }, [activeChatId, showToast]);
   const handleOpenCommentsMsg = useCallback((m: TelegramMessage) => setCommentsPost(m), []);
   const handleBotSwitchInlineText = useCallback((txt: string) => setComposerPrefillText(txt), []);
+  useEffect(() => { const open = (event: Event) => handleSelectChat((event as CustomEvent<string>).detail); window.addEventListener('webygram-open-chat', open); return () => window.removeEventListener('webygram-open-chat', open); }, [handleSelectChat]);
   const handleSelectChatFromList = useCallback(
     (id: string) => handleSelectChat(id, false),
     [handleSelectChat]
@@ -687,6 +709,7 @@ export default function App() {
       const curChat = activeChat;
       if (!el || !curChat) return;
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      followLatestRef.current = distFromBottom < 80;
       const shouldShow = distFromBottom > 220;
       if (shouldShow !== showScrollBottomRef.current) {
         showScrollBottomRef.current = shouldShow;
@@ -1065,6 +1088,8 @@ export default function App() {
           voiceEnabled={voiceChanger.getState().enabled}
         />
 
+        {(activeChat.type === 'group' || activeChat.type === 'channel') && <GroupVoiceBanner key={activeChat.id} chat={activeChat} />}
+
         {selectionMode && (
           <div className="px-4 py-2 bg-primary/10 dark:bg-elevated border-b border-primary/25 flex items-center justify-between gap-2 text-xs z-20">
             <div className="flex items-center gap-2 font-semibold text-primary tabular-nums">
@@ -1085,8 +1110,8 @@ export default function App() {
                   setForwardPickerState({
                     isOpen: true,
                     fromChatId: activeChatId!,
-                    messages: currentMessages.filter(m => selectedMsgIds.has(m.id)),
-                    messageIds: Array.from(selectedMsgIds),
+                    messages: currentMessages.filter(m => selectedMsgIds.has(m.id) || currentMessages.some(selected => selectedMsgIds.has(selected.id) && selected.groupedId && selected.groupedId===m.groupedId)),
+                    messageIds: currentMessages.filter(m => selectedMsgIds.has(m.id) || currentMessages.some(selected => selectedMsgIds.has(selected.id) && selected.groupedId && selected.groupedId===m.groupedId)).map(m=>m.id),
                   })
                 }
                 disabled={selectedMsgIds.size === 0}
@@ -1133,6 +1158,7 @@ export default function App() {
         )}
 
         {trimmedChatSearch && <SearchResults key={activeChat.id} query={chatSearchQuery} chats={chats} chatId={activeChat.id} topMsgId={activeTopicId || undefined} accountId={authSession.user.id} onSelectChat={handleSelectChatFromList} onOpenPeer={() => {}} onOpenMessage={handleOpenSearchMessage} />}
+        <div className="tg-timeline-viewport relative flex flex-1 min-h-0 min-w-0">
         <div
           key={`timeline:${activeChat.id}:${activeTopicId || 0}`}
           ref={messagesContainerRef}
@@ -1144,6 +1170,7 @@ export default function App() {
             activeChat.isDeletedChat ? 'opacity-70' : ''
           }`}
         >
+          <div ref={messagesContentRef}>
           {!trimmedChatSearch && telegramService.hasMoreMessages(activeChat.id) && currentMessages.length > 0 && (
             <div className="flex justify-center mb-3">
               <button
@@ -1181,8 +1208,9 @@ export default function App() {
                 : 'No messages in this conversation yet.'}
             </div>
           ) : (
-            displayedMessages.map((msg, idx) => {
-              const prevMsg = idx > 0 ? displayedMessages[idx - 1] : null;
+            timelineGroups.map((album, idx) => {
+              const msg = album[0];
+              const prevMsg = idx > 0 ? timelineGroups[idx - 1].at(-1)! : null;
               const msgDate = new Date(msg.timestamp);
               const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
               const isNewDay =
@@ -1216,20 +1244,21 @@ export default function App() {
                 <React.Fragment key={msg.id}>
                   {isNewDay && datePillLabel && (
                     <div className="flex justify-center my-2.5 select-none">
-                      <span className="px-3 py-0.5 rounded-full bg-surface/55 dark:bg-elevated/92 text-white text-[11.5px] font-semibold shadow-xs border border-white/10 dark:border-white/[0.06]">
+                      <span className="px-3 py-0.5 rounded-full tg-message-date text-[11.5px] font-semibold shadow-xs border border-white/10 dark:border-white/[0.06]">
                         {datePillLabel}
                       </span>
                     </div>
                   )}
                   <MessageItem
                     message={msg}
+                    albumMessages={album.length > 1 ? album : undefined}
                     chatId={activeChat.id}
                     chatTitle={activeChat.title}
                     isChannel={activeChat.type === 'channel'}
                     isProtected={activeChat.isProtected}
                     highlightQuery={chatSearchQuery}
                     selectionMode={selectionMode}
-                    isSelected={selectedMsgIds.has(msg.id)}
+                    isSelected={album.some(item=>selectedMsgIds.has(item.id))}
                     onToggleSelect={toggleSelectMessage}
                     onStartSelection={startSelectionWith}
                     onOpenMedia={handleOpenViewerMedia}
@@ -1248,12 +1277,16 @@ export default function App() {
             })
           )}
           <div ref={messagesEndRef} />
+          </div>
 
+
+        </div>
           {showScrollBottom && (
             <button
               type="button"
-              onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
-              className="sticky bottom-3 left-full -translate-x-2 z-20 w-9 h-9 rounded-full bg-surface dark:bg-elevated border border-outline dark:border-outline shadow-lg flex items-center justify-center text-muted dark:text-ink hover:text-primary cursor-pointer"
+              onClick={() => { const container=messagesContainerRef.current; if (!container) return; followLatestRef.current = true; scrollToEnd(container, modSettingsStore.getSettings().enableSmoothAnimations && container.scrollHeight-container.scrollTop-container.clientHeight<2500); }}
+              aria-label="Scroll to latest messages"
+              className="absolute bottom-4 right-4 z-20 w-11 h-11 rounded-full bg-surface dark:bg-elevated border border-outline dark:border-outline shadow-lg flex items-center justify-center text-muted dark:text-ink hover:text-primary cursor-pointer"
               title="Scroll to Latest Messages"
             >
               <ChevronDown className="w-4.5 h-4.5" />
@@ -1768,10 +1801,13 @@ export default function App() {
 
       {activeViewerMedia && activeChat && (
         <MediaViewerModal
-          key={`${activeChatId}:${activeViewerMedia.messageId}`}
+          key={`${viewerChatId}:${activeViewerMedia.messageId}`}
           media={activeViewerMedia.media}
-          chatId={activeChat.id}
-          chatTitle={activeChat.title}
+          chatId={viewerChatId}
+          chatTitle={chats.find(chat=>chat.id===viewerChatId)?.title || activeChat.title}
+          gallery={viewerGallery}
+          onForward={(chatId,messageId)=>{const source=[...telegramService.getMessages(chatId),...(telegramService.getSharedMedia(chatId,'media') || [])];const message=source.find(item=>item.id===messageId);if(!message || !/^\d+$/.test(messageId)){showToast('This item cannot be forwarded as a message.');return;}const selected=albumForwardSelection([...new Map(source.map(item=>[item.id,item])).values()],message);setActiveViewerMedia(null);setForwardPickerState({isOpen:true,fromChatId:chatId,messageIds:selected.map(item=>item.id),messages:selected});}}
+          onNavigate={(media,messageId)=>setActiveViewerMedia({media,messageId,chatId:viewerChatId})}
           messageId={activeViewerMedia.messageId}
           isProtected={activeChat.isProtected}
           onClose={() => setActiveViewerMedia(null)}
@@ -2078,7 +2114,7 @@ export default function App() {
           };
           startVoiceCallWithChat(existing, true);
         }}
-        onOpenMedia={(media, messageId) => setActiveViewerMedia({ media, messageId })}
+        onOpenMedia={(media, messageId) => setActiveViewerMedia({ media, messageId, chatId: activeUserProfileId || undefined })}
         onNotify={showToast}
       />
 

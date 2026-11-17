@@ -14,7 +14,7 @@ export const BUILTIN_VOICE_PRESETS: Record<BuiltinPresetKey, VoicePreset> = {
     id: 'natural_female',
     name: 'Natural Woman',
     gender: 'female',
-    description: 'Realistic adult female voice (198 Hz target, 1.18x vocal tract + natural breathiness).',
+    description: 'Adult feminine tone with adaptive pitch and independent vocal tract shaping.',
     pitchShift: 7,
     formantShift: 4,
     tone: 1,
@@ -44,7 +44,7 @@ export const BUILTIN_VOICE_PRESETS: Record<BuiltinPresetKey, VoicePreset> = {
     id: 'bright_female',
     name: 'Warm Alto Female',
     gender: 'female',
-    description: 'Natural mature woman voice (182 Hz target, 1.14x formants) ideal for medium/light voices.',
+    description: 'Lower feminine tone with gentle vocal tract shaping.',
     pitchShift: 5,
     formantShift: 3,
     tone: 2,
@@ -230,6 +230,8 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
     this.env = new Float32Array(this.HALF + 1);
     this.nearestPeak = new Int16Array(this.HALF + 1);
     this.peakSynPhase = new Float32Array(this.HALF + 1);
+    this.peakActive = new Uint8Array(this.HALF + 1);
+    this.peaks = new Int16Array(this.HALF + 1);
     this.prevOutPhase = new Float32Array(this.HALF + 1);
     this.nextOutPhase = new Float32Array(this.HALF + 1);
     this.outMag = new Float32Array(this.HALF + 1);
@@ -465,7 +467,8 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
     // 5. Smooth log-spectral envelope (finer resolution preserves F1/F2/F3 vocal tract shape accurately)
     const env = this.env;
     for (let k = 0; k <= HALF; k++) {
-      const radius = k < 40 ? 4 : k < 150 ? 6 : 9;
+      const harmonicWidth = Math.max(6, Math.min(18, Math.ceil((this.detectedF0 || 150) / binHz)));
+      const radius = k < 150 ? harmonicWidth : Math.max(10, harmonicWidth);
       let sum = 0;
       let wSum = 0;
       const lo = Math.max(0, k - radius);
@@ -483,25 +486,23 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
     const peakSynPhase = this.peakSynPhase;
     const prevOutPhase = this.prevOutPhase;
 
+    // Every bin locks to a real local peak. A window maximum can point at a
+    // non-peak with stale synthesis phase, which produces a metallic buzz.
+    let peakCount = 0;
     for (let k = 1; k < HALF; k++) {
-      let bestP = k;
-      let bestVal = mag[k];
-      const lo = Math.max(1, k - 3);
-      const hi = Math.min(HALF - 1, k + 3);
-      for (let j = lo; j <= hi; j++) {
-        if (mag[j] > bestVal) {
-          bestVal = mag[j];
-          bestP = j;
-        }
-      }
-      nearestPeak[k] = bestP;
-      if (bestP === k) {
+      if (mag[k] >= mag[k - 1] && mag[k] > mag[k + 1]) {
+        this.peaks[peakCount++] = k;
         const dstPeak = Math.max(1, Math.min(HALF - 1, Math.round(k * activePitch)));
-        peakSynPhase[k] = this.wrapPhase(prevOutPhase[dstPeak] + instFreq[k] * activePitch);
-      }
+        peakSynPhase[k] = this.wrapPhase((this.peakActive[k] ? peakSynPhase[k] : prevOutPhase[dstPeak]) + instFreq[k] * activePitch);
+        this.peakActive[k] = 1;
+      } else this.peakActive[k] = 0;
     }
-    nearestPeak[0] = 0;
-    nearestPeak[HALF] = HALF - 1;
+    if (!peakCount) this.peaks[peakCount++] = 1;
+    let peakIndex = 0;
+    for (let k = 0; k <= HALF; k++) {
+      while (peakIndex + 1 < peakCount && k > (this.peaks[peakIndex] + this.peaks[peakIndex + 1]) / 2) peakIndex++;
+      nearestPeak[k] = this.peaks[peakIndex];
+    }
 
     // 7. Hybrid Voiced/Unvoiced Spectral Resampling + Formant Warping + Glottal Tilt
     const outMag = this.outMag;
@@ -535,8 +536,8 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
       const envFromSrc = this.interpArray(env, envSrcIdx * harmonicBlend + k * (1.0 - harmonicBlend));
       const envTarget = this.interpArray(env, k / effectiveFormant);
       let envScale = (envTarget + 1e-5) / (envFromSrc + 1e-5);
-      if (envScale > 3.6) envScale = 3.6;
-      if (envScale < 0.22) envScale = 0.22;
+      if (envScale > 2.4) envScale = 2.4;
+      if (envScale < 0.4) envScale = 0.4;
 
       // Subtle Female Glottal Spectral Tilt: warmer F0 body, less pinched mid-nasal buzz, soft air
       let tiltScale = 1.0;
@@ -550,18 +551,14 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
         }
       }
 
-      const blendedMag = shiftedMag * harmonicBlend + mag[k] * (1.0 - harmonicBlend);
-      outMag[k] = blendedMag * envScale * tiltScale;
-
-      if (harmonicBlend > 0.72) {
-        nextOutPhase[k] = harmonicPhase;
-      } else if (harmonicBlend < 0.18) {
-        nextOutPhase[k] = phase[k];
-      } else {
-        // Shortest-angle phase blend for clean consonant-vowel transitions
-        const diffPh = this.wrapPhase(harmonicPhase - phase[k]);
-        nextOutPhase[k] = this.wrapPhase(phase[k] + diffPh * harmonicBlend);
-      }
+      // Crossfade complex spectra so consonants retain their own phase.
+      // Interpolating an angle with unrelated magnitudes causes phase smearing.
+      const wetMag = shiftedMag * envScale * tiltScale;
+      const dryMag = mag[k];
+      const real = wetMag * Math.cos(harmonicPhase) * harmonicBlend + dryMag * Math.cos(phase[k]) * (1 - harmonicBlend);
+      const imaginary = wetMag * Math.sin(harmonicPhase) * harmonicBlend + dryMag * Math.sin(phase[k]) * (1 - harmonicBlend);
+      outMag[k] = Math.hypot(real, imaginary);
+      nextOutPhase[k] = Math.atan2(imaginary, real);
     }
 
     // Reconstruct Hermitian spectrum
@@ -622,6 +619,9 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
     if (this.wasBypassed !== bypass) {
       // Do not replay an old overlap buffer after toggling effects during a call.
       this.outRing.fill(0);
+      this.peakActive.fill(0);
+      this.prevInPhase.fill(0);
+      this.prevOutPhase.fill(0);
       this.outRead = 0;
       this.outWrite = this.H;
       this.hopSamples = 0;
@@ -1141,26 +1141,26 @@ export class VoiceChangerEngine {
 
     // Subtle acoustic polish filters (primary vocal tract shift already handled cleanly inside Phase Vocoder!)
     if (this.highpassFilter) {
-      const hpFreq = isFemaleCurve ? 135 : enabled && gender === 'male' ? 75 : 85;
+      const hpFreq = enabled ? 65 : 75;
       this.highpassFilter.frequency.setTargetAtTime(hpFreq, t, 0.04);
     }
 
     if (this.chestCutFilter) {
-      const chestGain = isFemaleCurve ? -3.0 : activeFormant < 0 ? Math.min(4.5, Math.abs(activeFormant) * 0.7) : 0;
+      const chestGain = isFemaleCurve ? -1.2 : activeFormant < 0 ? Math.min(4.5, Math.abs(activeFormant) * 0.7) : 0;
       this.chestCutFilter.gain.setTargetAtTime(chestGain, t, 0.04);
     }
 
     if (this.formantF1Filter) {
-      this.formantF1Filter.gain.setTargetAtTime(isFemaleCurve ? 1.2 : 0, t, 0.04);
+      this.formantF1Filter.gain.setTargetAtTime(isFemaleCurve ? 0.4 : 0, t, 0.04);
     }
 
     if (this.formantF2Filter) {
-      const f2Gain = isFemaleCurve ? 1.8 + activeResonance * 0.18 : activeFormant < 0 ? -1.5 : 0;
+      const f2Gain = isFemaleCurve ? 0.6 + activeResonance * 0.08 : activeFormant < 0 ? -1.5 : 0;
       this.formantF2Filter.gain.setTargetAtTime(f2Gain, t, 0.04);
     }
 
     if (this.formantF3Filter) {
-      this.formantF3Filter.gain.setTargetAtTime(isFemaleCurve ? 1.5 : 0, t, 0.04);
+      this.formantF3Filter.gain.setTargetAtTime(isFemaleCurve ? 0.5 : 0, t, 0.04);
     }
 
     if (this.deEsserFilter) {

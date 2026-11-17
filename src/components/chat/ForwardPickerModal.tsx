@@ -1,3 +1,4 @@
+import { groupTimelineMessages } from '../../utils/messageAlbums';
 import React, { useState, useMemo, useRef } from 'react';
 import { X, Search, Forward, Check, Bookmark, EyeOff, Loader2, ArrowLeft, BellOff, CalendarClock, MessageSquare } from 'lucide-react';
 import { TelegramChat, TelegramMessage } from '../../types/telegram';
@@ -101,11 +102,10 @@ export const ForwardPickerModal: React.FC<Props> = ({ isOpen, fromChatId, messag
       </> : <>
         <div className="flex-1 overflow-y-auto min-h-0 p-3 space-y-3">
           <div className="rounded-xl bg-elevated p-3 space-y-2 max-h-48 overflow-y-auto" aria-label="Message preview">
-            {messages.map(message => <div key={message.id} className="border-l-2 border-primary pl-3 text-sm">
-              {!hideSenderTag && <p className="text-primary font-semibold text-xs">Forwarded from {message.forwardFrom?.name || message.senderName}</p>}
-              {message.media && <p className="text-muted text-xs">{message.media.fileName || message.media.type}</p>}
-              {(!message.media || !hideCaptions) && message.text && <p className="whitespace-pre-wrap break-words line-clamp-4">{message.text}</p>}
-              {message.poll && <p>{message.poll.question}</p>}
+            {groupTimelineMessages(messages).map(album => <div key={album[0].id} className="border-l-2 border-primary pl-3 text-sm" role={album.length > 1 ? 'group' : undefined} aria-label={album.length > 1 ? 'Album preview' : undefined}>
+              {!hideSenderTag && <p className="text-primary font-semibold text-xs">Forwarded from {album[0].forwardFrom?.name || album[0].senderName}</p>}
+              {album.length > 1 && <p className="text-muted text-xs">Album · {album.length} photos/videos</p>}
+              {album.map(message => <React.Fragment key={message.id}>{message.media && album.length === 1 && <p className="text-muted text-xs">{message.media.fileName || message.media.type}</p>}{(!message.media || !hideCaptions) && message.text && <p className="whitespace-pre-wrap break-words line-clamp-4">{message.text}</p>}{message.poll && <p>{message.poll.question}</p>}</React.Fragment>)}
             </div>)}
             {!messages.length && <p className="text-sm text-muted">{messageIds.length} messages ready to forward</p>}
           </div>

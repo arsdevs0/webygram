@@ -1,7 +1,7 @@
 import { modernTelegramColors } from '../themes/modernTelegram';
 import { ModSettings, ColorPalette, AccentColor } from '../types/modSettings';
 import { FLOW_PALETTES } from '../themes/flowPalettes';
-import { findFlowPalette, resolveFlowPalette, readableAccent, readableForeground, mixColor } from '../themes/themeTokens';
+import { findFlowPalette, resolveFlowPalette, readableAccent, readableForeground, readableText, mixColor } from '../themes/themeTokens';
 
 const STORAGE_KEY = 'tg_plus_mod_settings_v2';
 
@@ -30,31 +30,15 @@ export const COLOR_PALETTES: PaletteThemeTokens[] = [
   {
     id: 'night-blue',
     name: 'Original Telegram',
-    subtitle: 'Classic blue, bubbles and navigation',
-    bgMain: '#0E1621',
-    bgPanel: '#17212B',
-    bgElevated: '#202B36',
-    bubbleOut: '#2B5278',
-    bubbleOutBorder: '#3A6896',
-    bubbleIn: '#182533',
-    bubbleInBorder: '#243447',
-    border: '#0E1621',
-    previewSwatches: ['#0E1621', '#17212B', '#2B5278'],
+    subtitle: 'Telegram dark surfaces and violet accents',
+    ...modernTelegramColors('dark'),
   },
   ...FLOW_PALETTES.map(palette => resolveFlowPalette(palette, 'dark')),
   {
     id: 'amoled-black',
     name: 'AMOLED Onyx',
-    subtitle: 'True Pitch Black OLED',
-    bgMain: '#000000',
-    bgPanel: '#0A0E14',
-    bgElevated: '#121822',
-    bubbleOut: '#1E3A5F',
-    bubbleOutBorder: '#2D5488',
-    bubbleIn: '#0F151E',
-    bubbleInBorder: '#1E293B',
-    border: '#111827',
-    previewSwatches: ['#000000', '#0A0E14', '#1E3A5F'],
+    subtitle: 'Black OLED surfaces and Telegram accents',
+    ...modernTelegramColors('amoled'),
   },
   {
     id: 'emerald-forest',
@@ -129,17 +113,8 @@ export const COLOR_PALETTES: PaletteThemeTokens[] = [
   {
     id: 'daylight-classic',
     name: 'Daylight Classic',
-    subtitle: 'Crisp Light Sky & Mint',
-    isLight: true,
-    bgMain: '#E6EBEE',
-    bgPanel: '#FFFFFF',
-    bgElevated: '#F1F5F9',
-    bubbleOut: '#EFFDDE',
-    bubbleOutBorder: '#D2F4B0',
-    bubbleIn: '#FFFFFF',
-    bubbleInBorder: '#E2E8F0',
-    border: '#E2E8F0',
-    previewSwatches: ['#E6EBEE', '#FFFFFF', '#2AABEE'],
+    subtitle: 'Telegram white surfaces and blue accents',
+    ...modernTelegramColors('light'),
   },
 ];
 
@@ -225,16 +200,14 @@ class ModSettingsStore {
     return this.settings;
   }
 
-  public getActivePaletteTokens(): PaletteThemeTokens {
-    const flow = findFlowPalette(this.settings.colorPalette);
-    if (flow) return resolveFlowPalette(flow, this.settings.themeMode);
-    if (['night-blue', 'daylight-classic', 'amoled-black'].includes(this.settings.colorPalette)) {
-      const base = COLOR_PALETTES.find(p => p.id === this.settings.colorPalette) || COLOR_PALETTES[0];
-      return { ...base, ...modernTelegramColors(this.settings.themeMode) };
-    }
-    return (
-      COLOR_PALETTES.find((p) => p.id === this.settings.colorPalette) || COLOR_PALETTES[0]
-    );
+  private paletteCache?:{key:string;tokens:PaletteThemeTokens};
+  public getActivePaletteTokens():PaletteThemeTokens {
+    const key=this.settings.colorPalette+':'+this.settings.themeMode;
+    if(this.paletteCache?.key===key)return this.paletteCache.tokens;
+    const flow=findFlowPalette(this.settings.colorPalette);
+    const base=COLOR_PALETTES.find(p=>p.id===this.settings.colorPalette)||COLOR_PALETTES[0];
+    const tokens=flow ? resolveFlowPalette(flow,this.settings.themeMode) : ['night-blue','daylight-classic','amoled-black'].includes(this.settings.colorPalette) ? {...base,...modernTelegramColors(this.settings.themeMode)} : base;
+    this.paletteCache={key,tokens};return tokens;
   }
 
   public getActiveAccentHex(): string {
@@ -304,8 +277,9 @@ class ModSettingsStore {
     const pal = this.getActivePaletteTokens();
     const primary = this.getActiveAccentHex();
     const onPrimary = this.settings.accentColor === 'theme' && pal.onPrimary ? pal.onPrimary : readableForeground(primary);
-    const ink = pal.text || (pal.isLight ? '#202124' : '#F1F3F4');
-    const muted = pal.muted || (pal.isLight ? '#595E65' : '#B3BAC3');
+    const surfaces=[pal.bgMain,pal.bgPanel,pal.bgElevated];
+    const ink = readableText(pal.text || (pal.isLight ? '#202124' : '#F1F3F4'),surfaces);
+    const muted = readableText(pal.muted || (pal.isLight ? '#595E65' : '#B3BAC3'),surfaces);
 
     if (pal.isLight) {
       root.classList.remove('dark', 'amoled');
@@ -335,8 +309,14 @@ class ModSettingsStore {
     root.style.setProperty('--tg-accent', primary);
     root.style.setProperty('--tg-accent-hover', mixColor(onPrimary, primary, .12));
     root.style.setProperty('--tg-on-primary', onPrimary);
-    root.style.setProperty('--tg-primary-text', readableAccent(primary, pal.bgPanel, ink));
+    root.style.setProperty('--tg-primary-text', readableText(primary, surfaces));
     root.style.setProperty('--tg-text', ink);
+    for(const [name,surface] of [['in',pal.bubbleIn],['out',this.settings.bubbleStyle==='ios'?primary:pal.bubbleOut]] as const){
+      const text=readableText(ink,[surface]);root.style.setProperty('--tg-message-'+name+'-text',text);
+      root.style.setProperty('--tg-message-'+name+'-muted',readableText(muted,[surface]));
+      root.style.setProperty('--tg-message-'+name+'-link',readableAccent(primary,surface,text));
+    }
+    ['#1389ff','#eea229','#0bbd76','#ff536b','#7f6cff','#16adca'].forEach((tone,index)=>root.style.setProperty('--tg-tone-'+index,readableAccent(tone,pal.bgPanel,ink)));
     root.style.setProperty('--tg-muted', muted);
     root.style.setProperty('--tg-error', pal.error || (pal.isLight ? '#B3261E' : '#FFB4AB'));
     root.style.setProperty('--tg-surface-low', mixColor(pal.bgMain, pal.bgPanel, .5));

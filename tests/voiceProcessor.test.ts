@@ -62,3 +62,11 @@ test('pitch detection remains finite for low voices with long autocorrelation la
   assert.ok(Math.abs(instance.detectedF0 - 110) < 3, `Expected 110 Hz, got ${instance.detectedF0}`);
   assert.ok(instance.yinDiff.every((value: number) => Number.isFinite(value)));
 });
+
+test('unvoiced consonants retain their waveform through conversion', () => {
+ const instance=processor(),input=new Float32Array(24064),output=new Float32Array(24064);let seed=17;
+ const parameters={pitchRatio:[1.6],formantRatio:[1.18],enabled:[1],gateThreshold:[0],femaleCalibration:[0],femaleTargetHz:[198]};
+ for(let offset=0;offset<input.length;offset+=128){const frame=new Float32Array(128),out=new Float32Array(128);for(let i=0;i<128;i++){seed=(seed*1664525+1013904223)>>>0;frame[i]=(seed/4294967296-.5)*.2;input[offset+i]=frame[i];}instance.process([[frame]],[[out]],parameters);output.set(out,offset);}
+ let xy=0,xx=0,yy=0;for(let i=4096;i<output.length;i++){const x=input[i-2048],y=output[i];xy+=x*y;xx+=x*x;yy+=y*y;}
+ assert.ok(xy/Math.sqrt(xx*yy)>.95,'Fricatives were smeared or synthesized with unrelated phase');
+});
