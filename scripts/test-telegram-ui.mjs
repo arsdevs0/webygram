@@ -1,0 +1,110 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import { createServer } from 'vite';
+const modulePath = process.env.PLAYWRIGHT_MODULE || process.argv[2];
+if (!modulePath) throw new Error('Set PLAYWRIGHT_MODULE to the installed playwright/index.mjs path.');
+const { chromium } = await import(pathToFileURL(modulePath).href);
+process.env.VITE_DIRECT_TELEGRAM = 'false';
+const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' });
+await server.listen();
+const url = 'http://127.0.0.1:' + server.httpServer.address().port + '/tests/ui/telegramExperience.html';
+const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+const requests = [], drafts = [], errors = [];
+try {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await context.addInitScript(() => { localStorage.setItem('tg_plus_mod_settings_v2', JSON.stringify({ designVersion: 2, navigationStyle: 'flow', colorPalette: 'night-blue', hideOnlineStatus: true, showVoiceFloatingButton: false })); });
+  await context.route('**/api/**', async route => {
+    const req = route.request(); let body = {};
+    try { body = req.postDataJSON() || {}; } catch {}
+    let response = {};
+    if (req.url().includes('/messages/forward-batch')) {
+      requests.push(body);
+      response = { ok: requests.length > 1, count: body.messageIds.length, targets: body.toChatIds.map(id => ({ chatId: id, deliveredMessageIds: id === 'bob' && requests.length === 1 ? [] : body.messageIds, complete: id !== 'bob' || requests.length > 1, error: id === 'bob' && requests.length === 1 ? 'CHAT_WRITE_FORBIDDEN' : undefined })) };
+    } else if (req.url().includes('/draft')) { drafts.push({ ...body, chatId: decodeURIComponent(new URL(req.url()).pathname.split('/').at(-2)) }); response = { ok: true }; }
+    await route.fulfill({ json: response });
+  });
+  const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
+  await page.goto(url);
+  const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('tg_plus_mod_settings_v2')));
+  assert.equal(migrated.designVersion, 3); assert.equal(migrated.navigationStyle, 'telegram'); assert.equal(migrated.hideOnlineStatus, true);
+  const openAlice = async () => { await page.getByText('Alice', { exact: true }).first().click(); await page.locator('#msg-1').waitFor({ state: 'visible' }); };
+  const openForward = async () => { await page.locator('#msg-1').getByTitle('More', { exact: true }).click(); await page.getByRole('button', { name: 'Forward to Chat...' }).click(); await page.getByRole('dialog', { name: 'Forward messages' }).waitFor(); };
+  const back = async () => { await page.evaluate(() => history.back()); await page.waitForTimeout(120); };
+  await openAlice(); await openForward();
+  const dialog = page.getByRole('dialog', { name: 'Forward messages' });
+  assert.equal(await dialog.getByRole('button', { name: /Saved Messages/ }).count(), 1);
+  assert.equal(await dialog.getByRole('button', { name: /Bob group/ }).count(), 1);
+  assert.equal(await dialog.getByText('Read only', { exact: true }).count(), 0);
+  await dialog.getByRole('button', { name: /Saved Messages/ }).click();
+  await dialog.getByRole('button', { name: /Bob group/ }).click();
+  await dialog.getByRole('button', { name: 'Next', exact: true }).click();
+  const names = dialog.getByRole('checkbox', { name: 'Hide sender names' });
+  await names.tap(); assert.equal(await names.getAttribute('aria-checked'), 'false');
+  await dialog.getByText('Forwarded from Alice', { exact: true }).waitFor();
+  await dialog.getByRole('checkbox', { name: /Hide captions/ }).click();
+  assert.equal(await names.getAttribute('aria-checked'), 'true');
+  assert.equal(await dialog.getByText('Caption one', { exact: true }).count(), 0);
+  await dialog.getByRole('checkbox', { name: /Hide captions/ }).click();
+  await dialog.getByRole('checkbox', { name: 'Send without sound' }).click();
+  await dialog.getByRole('textbox', { name: 'Forward comment' }).fill('Forwarded with context');
+  await dialog.getByRole('checkbox', { name: 'Schedule messages' }).click();
+  await dialog.getByRole('button', { name: 'Schedule', exact: true }).click();
+  await dialog.getByRole('alert').waitFor(); assert.equal(requests.length, 0);
+  await dialog.getByRole('checkbox', { name: 'Schedule messages' }).click();
+  for (const size of [{ width: 320, height: 568 }, { width: 844, height: 390 }]) { await page.setViewportSize(size); assert.equal(await dialog.getByRole('button', { name: 'Send', exact: true }).isVisible(), true); assert.equal(await dialog.evaluate(el => el.scrollWidth > innerWidth), false); }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(200); await page.screenshot({ path: '.local/telegram-forward-mobile.png', fullPage: true });
+  const overflow = await dialog.evaluate(el => el.scrollWidth > innerWidth || el.getBoundingClientRect().height > innerHeight + 1);
+  assert.equal(overflow, false);
+  await back(); await dialog.getByRole('heading', { name: 'Forward to', exact: true }).waitFor();
+  await back(); await dialog.waitFor({ state: 'hidden' }); assert.equal(await page.locator('#msg-1').isVisible(), true);
+  await page.locator('#msg-1').getByTitle('More', { exact: true }).click(); await back();
+  assert.equal(await page.getByRole('button', { name: 'Forward to Chat...' }).isVisible(), false); assert.equal(await page.locator('#msg-1').isVisible(), true);
+  await back(); assert.equal(await page.locator('#msg-1').isVisible(), false); assert.equal(page.url(), url);
+  await openAlice(); await openForward();
+  await dialog.getByRole('button', { name: /Saved Messages/ }).click(); await dialog.getByRole('button', { name: /Bob group/ }).click();
+  await dialog.getByRole('button', { name: 'Next', exact: true }).click();
+  await dialog.getByRole('textbox', { name: 'Forward comment' }).fill('Context');
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click(); await dialog.getByRole('button', { name: 'Retry remaining', exact: true }).waitFor();
+  await dialog.getByRole('button', { name: 'Retry remaining', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
+  assert.equal(requests.length, 2); assert.deepEqual(requests[0], requests[1]);
+  await page.locator('#msg-2').getByTitle('More', { exact: true }).click(); await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const input = page.getByPlaceholder('Message', { exact: true }); await input.fill('Keep this failed edit'); await input.press('Enter');
+  await page.getByText('Edit rejected for test', { exact: true }).waitFor(); assert.equal(await input.inputValue(), 'Keep this failed edit');
+  await page.keyboard.press('Escape');
+  await input.fill('Alice draft'); await back(); await page.getByText('Bob group', { exact: true }).first().click(); await page.waitForTimeout(800);
+  assert.ok(drafts.some(d => d.chatId === 'alice' && d.text === 'Alice draft')); assert.ok(!drafts.some(d => d.chatId === 'bob' && d.text === 'Alice draft'));
+  await page.setViewportSize({ width: 1440, height: 900 }); await page.getByText('Alice', { exact: true }).first().click(); await openForward();
+  await dialog.getByRole('button', { name: /Saved Messages/ }).click(); await dialog.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.waitForTimeout(200); await page.screenshot({ path: '.local/telegram-forward-desktop.png', fullPage: true });
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+  const menuButton = page.getByRole('button', { name: 'Open navigation menu', exact: true });
+  await menuButton.click();
+  const menu = page.getByRole('dialog', { name: 'Navigation menu' }); await menu.waitFor();
+  await page.waitForTimeout(200); await page.screenshot({ path: '.local/telegram-navigation-desktop.png', fullPage: true });
+  assert.equal(await page.locator('.tg-desktop-nav').isVisible(), false);
+  await menu.getByRole('button', { name: 'Saved Messages', exact: true }).click();
+  await page.getByRole('heading', { name: 'Saved Messages', exact: true }).waitFor();
+  await menuButton.click(); await menu.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('.tg-sidebar').getByRole('heading', { name: 'Settings', exact: true }).waitFor();
+  await back(); await menuButton.waitFor({ state: 'visible' });
+  await menuButton.click(); await menu.getByRole('button', { name: 'Archived chats', exact: true }).click();
+  await page.getByRole('heading', { name: 'Archived Chats', exact: true }).waitFor();
+  await back(); await menuButton.waitFor({ state: 'visible' });
+  const search = page.getByRole('searchbox', { name: 'Search Telegram' }); await search.fill('Alice');
+  await page.keyboard.press('Escape'); assert.equal(await search.inputValue(), '');
+  await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(150);
+  await menuButton.click(); await menu.waitFor();
+  await page.waitForTimeout(200); await page.screenshot({ path: '.local/telegram-navigation-mobile.png', fullPage: true });
+  assert.equal(await page.getByRole('navigation', { name: 'Mobile navigation' }).count(), 0);
+  await menu.getByRole('button', { name: 'Webygram extras', exact: true }).click();
+  await menu.getByRole('button', { name: 'Media vault', exact: true }).waitFor();
+  await back(); await menu.waitFor({ state: 'hidden' });
+  assert.deepEqual(errors, []);
+  fs.writeFileSync('.local/telegram-ui-results.json', JSON.stringify({ passed: true, checks: ['actual App Back: preview → recipients → chat → list', 'menu Back and Escape', 'recipient deduplication and read-only filtering', 'caption/name preview', 'invalid schedule blocked', 'partial retry stable request ID', 'failed edit retains text', 'draft saved to original chat', 'mobile and desktop layouts', 'Telegram inline search, menu, Saved Messages, archive and settings sidebar'], requestCount: requests.length, errors }, null, 2));
+  console.log('UI checks passed: real App navigation, preview options, retries, edit/drafts and mobile/desktop layouts.');
+} catch (error) { console.error('UI check failed:', error); console.error('Page errors:', errors); process.exitCode = 1; }
+finally { await browser.close(); await server.close(); }
+
+

@@ -173,13 +173,13 @@ const DEFAULT_SETTINGS: ModSettings = {
   defaultDisappearingTimer: 0,
   autoPlayGifs: true,
 
-  showVoiceFloatingButton: true,
+  showVoiceFloatingButton: false,
   enableSmoothAnimations: true,
   doubleTapReaction: '❤️',
   sendWithEnter: true,
   showFolderUnreadCounters: true,
   compactSidebarMode: false,
-  navigationStyle: 'auto',
+  navigationStyle: 'telegram',
 };
 
 class ModSettingsStore {
@@ -199,12 +199,12 @@ class ModSettingsStore {
       const settings = { ...DEFAULT_SETTINGS, ...parsed };
       // Restore the requested Telegram appearance after the earlier Flow rollout.
       // Only appearance changes; privacy, media and other mod preferences survive.
-      if (parsed.designVersion !== 2) {
+      if (parsed.designVersion !== 3) {
         Object.assign(settings, {
           colorPalette: 'night-blue', accentColor: 'telegram-blue', themeMode: 'dark',
-          chatWallpaper: 'pattern-tg', bubbleStyle: 'telegram', navigationStyle: 'auto',
+          chatWallpaper: 'pattern-tg', bubbleStyle: 'telegram', navigationStyle: 'telegram',
         });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, designVersion: 2 }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, designVersion: 3 }));
       }
       return settings;
     } catch {
@@ -214,7 +214,7 @@ class ModSettingsStore {
 
   private saveToStorage() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...this.settings, designVersion: 2 }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...this.settings, designVersion: 3 }));
     } catch {
       // Ignore quota errors
     }

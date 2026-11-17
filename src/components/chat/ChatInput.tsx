@@ -1,3 +1,4 @@
+import { useEscapeDismiss } from '../common/useEscapeDismiss';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
@@ -65,7 +66,7 @@ interface Props {
     attachmentMedia?: { fileDataUrl: string; fileName: string; mediaType: 'photo' | 'video' | 'file' },
     scheduleDate?: number
   ) => Promise<boolean | void> | void;
-  onSaveEdit: (newText: string) => void;
+  onSaveEdit: (newText: string) => Promise<boolean> | boolean;
   onCancelReply: () => void;
   onCancelEdit: () => void;
   onOpenDisappearingModal: () => void;
@@ -186,7 +187,7 @@ export const ChatInput: React.FC<Props> = ({
   const recordingStartTimeRef = useRef<number>(0);
   const draftTimerRef = useRef<number | null>(null);
   const lastLoadedChatIdRef = useRef<string>('');
-  const pendingDraftRef = useRef<{ text: string; replyToId?: string } | null>(null);
+  const pendingDraftRef = useRef<{ chatId: string; text: string; replyToId?: string } | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -206,7 +207,7 @@ export const ChatInput: React.FC<Props> = ({
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
       if (pendingDraftRef.current) {
-        void telegramService.saveDraft(chatId, pendingDraftRef.current.text, pendingDraftRef.current.replyToId);
+        void telegramService.saveDraft(pendingDraftRef.current.chatId, pendingDraftRef.current.text, pendingDraftRef.current.replyToId);
       }
     };
   }, []);
@@ -234,6 +235,16 @@ export const ChatInput: React.FC<Props> = ({
       document.removeEventListener('keydown', handleEscape);
     };
   }, [showAttachMenu, showSchedulePopover, showExpressionDrawer]);
+
+  useEscapeDismiss(showAttachMenu || showSchedulePopover || showExpressionDrawer || showFormatToolbar, () => {
+    setShowExpressionDrawer(false); setShowAttachMenu(false); setShowSchedulePopover(false); setShowFormatToolbar(false);
+  });
+  useEffect(() => () => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    const draft = pendingDraftRef.current;
+    if (draft) { pendingDraftRef.current = null; void telegramService.saveDraft(draft.chatId, draft.text, draft.replyToId); }
+  }, [chatId]);
+  useEffect(() => { setShowExpressionDrawer(false); setShowAttachMenu(false); setShowSchedulePopover(false); setShowFormatToolbar(false); }, [chatId]);
 
   const wasEditingRef = useRef<boolean>(false);
 
@@ -308,7 +319,7 @@ export const ChatInput: React.FC<Props> = ({
   const handleTextChange = (nextVal: string) => {
     setText(nextVal);
     if (!editingMessage && chatId) {
-      pendingDraftRef.current = { text: nextVal, replyToId: replyingTo?.id };
+      pendingDraftRef.current = { chatId, text: nextVal, replyToId: replyingTo?.id };
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
       draftTimerRef.current = window.setTimeout(() => {
         void telegramService.saveDraft(chatId, nextVal, replyingTo?.id);
@@ -363,8 +374,10 @@ export const ChatInput: React.FC<Props> = ({
     setLocalSendError(null);
     onDismissSendError?.();
     if (editingMessage) {
-      onSaveEdit(trimmed);
-      setText('');
+      sendingRef.current = true;
+      try { await onSaveEdit(trimmed); }
+      catch (error) { setLocalSendError((error as Error).message || 'Could not edit message.'); }
+      finally { sendingRef.current = false; }
       return;
     }
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);

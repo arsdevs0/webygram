@@ -25,6 +25,12 @@ Each browser signs in to Telegram independently. The browser stores its session,
 
 Keep one app tab open, connected and awake for local auto-save, anti-delete, auto-forward and similar ongoing work. Closing the app, device sleep, lost connectivity or browser suspension stops that work. Anti-delete can only preserve content the app received/cached; it cannot recover unseen deleted content. Large vaults are limited by browser storage and device memory.
 
+## Forwarding and navigation
+
+Forwarding has a recipient picker and preview with sender-name/caption controls, comments, silent sending and scheduling. Caption removal also hides sender names, as Telegram requires. Partial retries preserve delivered destinations and Telegram random IDs during the same app/engine session.
+
+Browser/device Back and Escape close the current menu or panel, then return from the chat to the list. At the root, Back can leave the app. Original Telegram uses inline search, folder tabs, a main menu and a desktop settings sidebar; Flow navigation remains selectable.
+
 ## Appearance and audio
 
 Original Telegram is the default. The previous design rollout is migrated back once while preserving mod preferences. Flow themes remain selectable. Navigation stays available; Appearance reset restores Original Telegram.

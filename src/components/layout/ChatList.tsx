@@ -1,3 +1,5 @@
+import { TelegramNavigationMenu } from './TelegramNavigationMenu';
+import { useEscapeDismiss } from '../common/useEscapeDismiss';
 import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react';
 import {
   Search,
@@ -102,6 +104,8 @@ export const ChatList: React.FC<Props> = React.memo(({
   activeBottomTab,
   onSelectBottomTab,
 }) => {
+  const preferences = modSettingsStore.getSettings();
+  const telegramNavigation = preferences.navigationStyle === 'telegram' || (preferences.navigationStyle === 'auto' && !modSettingsStore.getActivePaletteTokens().id.startsWith('flow-'));
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearch = useDeferredValue(searchQuery);
   const [showSearchBar, setShowSearchBar] = useState(false);
@@ -158,6 +162,12 @@ export const ChatList: React.FC<Props> = React.memo(({
     };
   }, []);
 
+  useEscapeDismiss(showSearchBar || Boolean(searchQuery), () => { setSearchQuery(''); setShowSearchBar(false); });
+  useEscapeDismiss(isArchiveViewOpen, () => { setIsArchiveViewOpen(false); setShowArchiveSearch(false); setArchiveSearchQuery(''); });
+  useEscapeDismiss(showNewMessageModal, () => setShowNewMessageModal(false));
+  useEscapeDismiss(Boolean(contextMenuChatId || showPencilMenu || showArchiveHeaderMenu || showHamburgerDrawer), () => {
+    setContextMenuChatId(null); setShowPencilMenu(false); setShowArchiveHeaderMenu(false); setShowHamburgerDrawer(false);
+  });
   useEffect(() => {
     if (!contextMenuChatId && !showPencilMenu && !showArchiveHeaderMenu && !showHamburgerDrawer) return;
     const close = () => {
@@ -698,7 +708,14 @@ export const ChatList: React.FC<Props> = React.memo(({
         </div>
       ) : (
         <>
-          {/* Official Telegram Header: [☰] Webygram [🔍] */}
+          {telegramNavigation && <header className="tg-telegram-list-header">
+            <button type="button" aria-label={searchQuery || showSearchBar ? 'Back to chats' : 'Open navigation menu'} aria-expanded={showHamburgerDrawer} className="tg-icon-button" onClick={() => { if (searchQuery || showSearchBar) { setSearchQuery(''); setShowSearchBar(false); } else setShowHamburgerDrawer(true); }}>
+              {searchQuery || showSearchBar ? <ArrowLeft /> : <Menu />}
+            </button>
+            <label className="tg-telegram-search"><Search className="w-5 h-5 shrink-0" /><input type="search" aria-label="Search Telegram" placeholder="Search" value={searchQuery} onChange={e => { setSearchQuery(e.target.value); setShowSearchBar(Boolean(e.target.value.trim())); }} />{isLoadingDialogs && <Loader2 className="w-4 h-4 animate-spin" />}</label>
+          </header>}
+          {!telegramNavigation && <>
+          {/* Optional Flow header */}
           <div className="tg-list-header px-3.5 pt-3 pb-2 flex items-center justify-between gap-2 bg-surface dark:bg-surface">
             <div className="flex items-center gap-3 min-w-0">
               <button
@@ -784,7 +801,8 @@ export const ChatList: React.FC<Props> = React.memo(({
             </div>
           )}
 
-          {/* Official Telegram Folder Tabs with Clean Unread Counters */}
+          </>}
+          {/* Telegram folder tabs */}
           <div className={`tg-folder-tabs px-3 py-2 bg-canvas items-center gap-2 overflow-x-auto no-scrollbar ${showSearchBar || searchQuery ? 'hidden' : 'flex'}`}>
             {folders.map((f) => {
               const isActive = activeFolderId === f.id;
@@ -1049,7 +1067,7 @@ export const ChatList: React.FC<Props> = React.memo(({
 
       {/* Official Telegram Floating Circular Blue Pencil FAB */}
       {isConnected && (
-        <div className="absolute bottom-[74px] lg:bottom-4 right-4 z-30">
+        <div className="tg-new-message-fab absolute bottom-[74px] lg:bottom-4 right-4 z-30">
           {showPencilMenu && (
             <div
               onClick={(e) => e.stopPropagation()}
@@ -1106,8 +1124,20 @@ export const ChatList: React.FC<Props> = React.memo(({
         </div>
       )}
 
-      {/* Slide-Out Left Hamburger Navigation Drawer */}
-      {showHamburgerDrawer && (
+      {showHamburgerDrawer && telegramNavigation && <TelegramNavigationMenu
+        user={userSession} name={userFullName} isConnected={isConnected} night={isDarkTheme}
+        onClose={() => setShowHamburgerDrawer(false)} onProfile={() => onOpenMyProfile?.()}
+        onNewGroup={() => onCreateChat?.('group')} onNewChannel={() => onCreateChat?.('channel')}
+        onContacts={() => { setShowNewMessageModal(true); setNewMessageQuery(''); setDirectError(null); }}
+        onCalls={() => onOpenCallsHub?.()} onSaved={() => { const saved = chats.find(c => c.type === 'saved'); if (saved) onSelectChat(saved.id); else onOpenChatByLink?.('me'); }}
+        onArchive={() => setIsArchiveViewOpen(true)} onSettings={() => onSelectBottomTab('settings')}
+        onNight={toggleNightMode} onLogin={onOpenLoginModal} onVault={() => onSelectBottomTab('vault')}
+        onDeleted={() => onSelectBottomTab('deleted')} onMods={onOpenAyuGramSettings}
+        onVoice={() => onOpenVoiceStudio?.()} onAppearance={onOpenModSettings}
+        onFolders={() => onOpenFolderManager?.()} onChannels={() => onSelectBottomTab('channels')}
+      />}
+      {/* Optional Flow navigation drawer */}
+      {showHamburgerDrawer && !telegramNavigation && (
         <div
           role="dialog" aria-modal="true" aria-label="Navigation menu"
           className="tg-navigation-drawer animate-fade-in fixed inset-0 z-[90] bg-black/55 backdrop-blur-[2px] flex"
@@ -1245,7 +1275,6 @@ export const ChatList: React.FC<Props> = React.memo(({
                       const saved = chats.find((c) => c.type === 'saved');
                       if (saved) {
                         onSelectChat(saved.id);
-                        onSelectBottomTab('chats');
                       }
                     }}
                     className="w-full px-3 py-2.5 rounded-xl flex items-center gap-3.5 hover:bg-hover dark:hover:bg-hover active:scale-[0.98] text-left font-medium cursor-pointer transition-all duration-150"

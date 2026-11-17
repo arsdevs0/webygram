@@ -1944,14 +1944,12 @@ export class TelegramService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId, messageId, revoke }),
       });
-      if (!res.ok) return;
+      if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || 'Could not delete message.'); }
       if (this.messages[chatId]) {
         this.messages[chatId] = this.messages[chatId].filter((m) => m.id !== messageId);
       }
       this.notify();
-    } catch {
-      // ignore
-    }
+    } catch (error) { throw error; }
   }
 
   public async togglePinMessage(chatId: string, messageId: string) {
@@ -2475,26 +2473,21 @@ export class TelegramService {
 
   // --- Official Telegram Parity Methods ---
 
-  public async forwardBatch(params: {
-    fromChatId: string;
-    toChatIds: string[];
-    messageIds: string[];
-    hideSenderTag?: boolean;
-  }): Promise<number> {
+  public async forwardBatchDetailed(params: { fromChatId: string; toChatIds: string[]; messageIds: string[]; requestId: string } & import('../utils/forwardOptions').ForwardOptions): Promise<import('../utils/forwardOptions').ForwardBatchResult> {
     const res = await fetch('/api/tg/messages/forward-batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fromChatId: params.fromChatId,
-        toChatIds: params.toChatIds,
-        messageIds: params.messageIds.map(Number),
-        hideSenderTag: params.hideSenderTag ?? ayuGramEngine.getSettings().hideForwardTag,
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...params, messageIds: params.messageIds.map(Number) }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Could not forward selected messages.');
-    soundEffects.playSend();
-    return Number(data.count || params.messageIds.length);
+    if (data.targets.some((target: { complete: boolean }) => target.complete)) soundEffects.playSend();
+    return data;
+  }
+
+  public async forwardBatch(params: { fromChatId: string; toChatIds: string[]; messageIds: string[]; hideSenderTag?: boolean }): Promise<number> {
+    const result = await this.forwardBatchDetailed({ ...params, hideSenderTag: params.hideSenderTag ?? ayuGramEngine.getSettings().hideForwardTag, requestId: crypto.randomUUID() });
+    if (!result.ok) throw new Error(result.targets.filter(t => !t.complete).map(t => t.error).join('; ') || 'Some messages could not be forwarded.');
+    return result.count;
   }
 
   public async deleteBatch(chatId: string, messageIds: string[], revoke: boolean = true): Promise<void> {

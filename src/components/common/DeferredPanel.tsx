@@ -2,12 +2,12 @@ import React, { lazy, Suspense, type ComponentType } from 'react';
 import { useEscapeDismiss } from './useEscapeDismiss';
 
 /** Keep optional features out of startup; closed panels don't subscribe or fetch. */
-export function deferredPanel<T extends ComponentType<any>>(load: () => Promise<{ default: T }>) {
+export function deferredPanel<T extends ComponentType<any>>(load: () => Promise<{ default: T }>, managesDismissal = false) {
   const Panel = lazy(load);
   return function DeferredPanel(props: React.ComponentProps<T>) {
     const modal = 'isOpen' in props;
     const open = modal && Boolean((props as { isOpen: boolean }).isOpen);
-    useEscapeDismiss(open, (props as { onClose?: () => void }).onClose);
+    useEscapeDismiss(open && !managesDismissal, (props as { onClose?: () => void }).onClose);
     if (modal && !(props as { isOpen: boolean }).isOpen) return null;
     return (
       <Suspense fallback={

@@ -1,5 +1,7 @@
 import { ChatPhoto } from './ChatPhoto';
-import React, { useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import { useEscapeDismiss } from '../common/useEscapeDismiss';
+import { createPortal } from 'react-dom';
+import React, { useState, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import {
   Check,
   CheckCheck,
@@ -154,6 +156,22 @@ export const MessageItem: React.FC<Props> = React.memo(({
   const ayuSettings = useSyncExternalStore(subscribeAyuSettings, getAyuSettingsSnapshot);
   const modSettings = useSyncExternalStore(subscribeModSettings, getModSettingsSnapshot);
 
+  useEscapeDismiss(showActionsMenu || showReactionPicker || showEditHistory, () => { setShowActionsMenu(false); setShowReactionPicker(false); setShowEditHistory(false); });
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const [actionPosition, setActionPosition] = useState({ top: 0, left: 0 });
+  useLayoutEffect(() => {
+    if (!showActionsMenu) return;
+    const position = () => {
+      const anchor = bubbleRef.current?.getBoundingClientRect();
+      const menu = actionMenuRef.current?.getBoundingClientRect();
+      if (!anchor || !menu) return;
+      const top = anchor.top + 24 + menu.height <= window.innerHeight - 12 ? anchor.top + 24 : anchor.bottom - menu.height;
+      setActionPosition({ top: Math.max(12, Math.min(top, window.innerHeight - menu.height - 12)), left: Math.max(12, Math.min(anchor.right - menu.width, window.innerWidth - menu.width - 12)) });
+    };
+    position(); window.addEventListener('resize', position); window.addEventListener('scroll', position, true);
+    return () => { window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); };
+  }, [showActionsMenu]);
+  const forwardBusyRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const lastTapRef = useRef<number>(0);
@@ -176,7 +194,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
   useEffect(() => {
     if (!showActionsMenu && !showReactionPicker) return;
     const handleOutside = (ev: MouseEvent) => {
-      if (bubbleRef.current && !bubbleRef.current.contains(ev.target as Node)) {
+      if (bubbleRef.current && !bubbleRef.current.contains(ev.target as Node) && !actionMenuRef.current?.contains(ev.target as Node)) {
         setShowActionsMenu(false);
         setShowReactionPicker(false);
       }
@@ -354,10 +372,15 @@ export const MessageItem: React.FC<Props> = React.memo(({
 
   const handleForwardBypass = async (e: React.MouseEvent, destination: 'target' | 'me' = 'me') => {
     e.stopPropagation();
+    if (forwardBusyRef.current) return;
+    forwardBusyRef.current = true;
     setForwardingState('busy');
     const target =
       destination === 'target' && telegramService.getTargetGroup() ? 'target' : 'me';
-    await telegramService.forwardMessage(chatId, message.id, target, ayuSettings.hideForwardTag);
+    const result = await telegramService.forwardMessage(chatId, message.id, target, ayuSettings.hideForwardTag);
+    forwardBusyRef.current = false;
+    if (!result.ok) { setForwardingState('idle'); onNotify?.(result.error || 'Could not forward message.'); return; }
+    onNotify?.('Forwarded to ' + (target === 'me' ? 'Saved Messages' : telegramService.getTargetGroup()?.title));
     setForwardingState('done');
     setTimeout(() => setForwardingState('idle'), 2000);
   };
@@ -1733,8 +1756,8 @@ export const MessageItem: React.FC<Props> = React.memo(({
         )}
 
         {/* Actions Menu */}
-        {showActionsMenu && (
-          <div className="absolute top-6 right-0 z-30 w-52 bg-surface dark:bg-elevated border border-outline dark:border-outline rounded-xl shadow-lg py-1 text-xs text-ink dark:text-ink">
+        {showActionsMenu && createPortal(
+          <div ref={actionMenuRef} aria-label="Message actions" style={actionPosition} onClick={e => e.stopPropagation()} className="tg-message-actions fixed z-[80] w-56 max-h-[calc(100dvh-24px)] overflow-y-auto bg-surface dark:bg-elevated border border-outline dark:border-outline rounded-xl shadow-lg py-1 text-sm text-ink dark:text-ink">
             {!isOut && effectiveSenderId && onOpenUserProfile && (
               <button
                 type="button"
@@ -1783,11 +1806,10 @@ export const MessageItem: React.FC<Props> = React.memo(({
             {message.text && (
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void navigator.clipboard.writeText(message.text);
-                  onNotify?.('Message text copied');
-                  setShowActionsMenu(false);
+                onClick={async (e) => {
+                  e.stopPropagation(); setShowActionsMenu(false);
+                  try { await navigator.clipboard.writeText(message.text); onNotify?.('Message text copied'); }
+                  catch { onNotify?.('Could not copy text. Check clipboard permission.'); }
                 }}
                 className="w-full px-3 py-1.5 text-left hover:bg-hover dark:hover:bg-hover flex items-center gap-2 cursor-pointer"
               >
@@ -1885,8 +1907,8 @@ export const MessageItem: React.FC<Props> = React.memo(({
 
                 <button
                   type="button"
-                  onClick={() => {
-                    void telegramService.forwardMessage(chatId, message.id, 'me', ayuSettings.hideForwardTag);
+                  onClick={(e) => {
+                    void handleForwardBypass(e, 'me');
                     setShowActionsMenu(false);
                   }}
                   className="w-full px-3 py-1.5 text-left hover:bg-hover dark:hover:bg-hover flex items-center gap-2 cursor-pointer"
@@ -1904,8 +1926,8 @@ export const MessageItem: React.FC<Props> = React.memo(({
                 {telegramService.getTargetGroup() && (
                   <button
                     type="button"
-                    onClick={() => {
-                      void telegramService.forwardMessage(chatId, message.id, 'target', ayuSettings.hideForwardTag);
+                    onClick={(e) => {
+                      void handleForwardBypass(e, 'target');
                       setShowActionsMenu(false);
                     }}
                     className="w-full px-3 py-1.5 text-left hover:bg-hover dark:hover:bg-hover flex items-center gap-2 cursor-pointer"
@@ -1935,21 +1957,22 @@ export const MessageItem: React.FC<Props> = React.memo(({
 
             <button
               type="button"
-              onClick={() => {
-                void telegramService.deleteMessage(chatId, message.id, true);
+              onClick={async () => {
                 setShowActionsMenu(false);
+                try { await telegramService.deleteMessage(chatId, message.id, true); }
+                catch (error) { onNotify?.((error as Error).message || 'Could not delete message.'); }
               }}
               className="w-full px-3 py-1.5 text-left text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Delete Message</span>
             </button>
-          </div>
+          </div>, document.body
         )}
         </div>
 
         {/* Channel Post Quick Forward Circle Button (Matches Official Telegram Channel UI) */}
-        {isChannel && !isOut && onOpenForwardPicker && (
+        {isChannel && !isOut && onOpenForwardPicker && (!isProtected || ayuSettings.bypassContentRestrictions) && !message.isPending && !message.isDeletedBySender && (
           <button
             type="button"
             onClick={(e) => {

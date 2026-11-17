@@ -32,7 +32,7 @@ export const PollComposerModal: React.FC<Props> = ({
   const [scheduleDateTime, setScheduleDateTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEscapeDismiss(isOpen && !submitting, onClose);
+  useEscapeDismiss(isOpen, () => { if (!submitting) onClose(); });
 
   if (!isOpen) return null;
 

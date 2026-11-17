@@ -7,7 +7,7 @@ import { CallRecordingPanel, CallRecordingIndicator } from './components/call/Ca
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue, useLayoutEffect } from 'react';
 import { deferredPanel } from './components/common/DeferredPanel';
-import { useEscapeDismiss } from './components/common/useEscapeDismiss';
+import { useEscapeDismiss, useAppBack } from './components/common/useEscapeDismiss';
 import { ChatList, BottomNavTab } from './components/layout/ChatList';
 import { SettingsHome } from './components/settings/SettingsHome';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
@@ -31,8 +31,8 @@ const CreateChatModal = deferredPanel(() => import('./components/channels/Create
 const ChannelsHubView = deferredPanel(() => import('./components/channels/ChannelsHubView').then(m => ({ default: m.ChannelsHubView })));
 const VaultView = deferredPanel(() => import('./components/vault/VaultView').then(m => ({ default: m.VaultView })));
 const DeletedLogsView = deferredPanel(() => import('./components/deleted/DeletedLogsView').then(m => ({ default: m.DeletedLogsView })));
-const ForwardPickerModal = deferredPanel(() => import('./components/chat/ForwardPickerModal').then(m => ({ default: m.ForwardPickerModal })));
-const PollComposerModal = deferredPanel(() => import('./components/chat/PollComposerModal').then(m => ({ default: m.PollComposerModal })));
+const ForwardPickerModal = deferredPanel(() => import('./components/chat/ForwardPickerModal').then(m => ({ default: m.ForwardPickerModal })), true);
+const PollComposerModal = deferredPanel(() => import('./components/chat/PollComposerModal').then(m => ({ default: m.PollComposerModal })), true);
 const ScheduledQueueModal = deferredPanel(() => import('./components/chat/ScheduledQueueModal').then(m => ({ default: m.ScheduledQueueModal })));
 const CommentsDrawer = deferredPanel(() => import('./components/chat/CommentsDrawer').then(m => ({ default: m.CommentsDrawer })));
 const FolderManagerModal = deferredPanel(() => import('./components/layout/FolderManagerModal').then(m => ({ default: m.FolderManagerModal })));
@@ -166,6 +166,8 @@ export default function App() {
   const [forwardPickerState, setForwardPickerState] = useState<{
     isOpen: boolean;
     messageIds: string[];
+    fromChatId?: string;
+    messages?: TelegramMessage[];
   }>({ isOpen: false, messageIds: [] });
   const [isPollModalOpen, setIsPollModalOpen] = useState(false);
   const [isScheduledModalOpen, setIsScheduledModalOpen] = useState(false);
@@ -182,6 +184,19 @@ export default function App() {
   const [activeUserProfileFallbackName, setActiveUserProfileFallbackName] = useState<string | undefined>(
     undefined
   );
+
+  const backToChats = useCallback(() => {
+    setActiveView('chats'); setActiveNavItem('chats'); setActiveBottomTab('chats'); setShowInfoPanel(false);
+  }, []);
+  useEscapeDismiss(isConfirmCallOpen, () => { setIsConfirmCallOpen(false); setCallTargetChat(null); });
+  useAppBack(activeView !== 'chats' || selectionMode || Boolean(chatSearchQuery) || Boolean(editingMessage) || Boolean(replyingTo) || activeTopicId !== null, () => {
+    if (selectionMode) { setSelectionMode(false); setSelectedMsgIds(new Set()); }
+    else if (chatSearchQuery) setChatSearchQuery('');
+    else if (editingMessage) setEditingMessage(null);
+    else if (replyingTo) setReplyingTo(null);
+    else if (activeTopicId !== null) { setActiveTopicId(null); if (activeChatId) void telegramService.loadMessages(activeChatId, 0); }
+    else backToChats();
+  });
 
   const toastTimerRef = useRef<number | null>(null);
   const showToast = useCallback((msg: string) => {
@@ -622,8 +637,11 @@ export default function App() {
   const handleReplyMsg = useCallback((m: TelegramMessage) => setReplyingTo(m), []);
   const handleEditMsg = useCallback((m: TelegramMessage) => setEditingMessage(m), []);
   const handleOpenForwardMsg = useCallback((msgId: string) => {
-    setForwardPickerState({ isOpen: true, messageIds: [msgId] });
-  }, []);
+    if (!activeChatId) return;
+    const message = telegramService.getMessages(activeChatId).find(m => m.id === msgId);
+    if (!message || message.isPending || message.isDeletedBySender || !/^\d+$/.test(msgId)) { showToast('This message is not available for forwarding.'); return; }
+    setForwardPickerState({ isOpen: true, fromChatId: activeChatId, messageIds: [msgId], messages: [message] });
+  }, [activeChatId, showToast]);
   const handleOpenCommentsMsg = useCallback((m: TelegramMessage) => setCommentsPost(m), []);
   const handleBotSwitchInlineText = useCallback((txt: string) => setComposerPrefillText(txt), []);
   const handleSelectChatFromList = useCallback(
@@ -681,7 +699,8 @@ export default function App() {
       .map((m) => m.text)
       .join('\n\n');
     if (selectedText) {
-      await navigator.clipboard.writeText(selectedText).catch(() => {});
+      try { await navigator.clipboard.writeText(selectedText); }
+      catch { showToast('Could not copy messages. Check clipboard permission.'); return; }
       showToast(`Copied ${selectedMsgIds.size} message(s)`);
     }
     exitSelectionMode();
@@ -690,9 +709,10 @@ export default function App() {
   const handleBatchDelete = async () => {
     if (!activeChatId || selectedMsgIds.size === 0) return;
     const ids = Array.from(selectedMsgIds);
-    await telegramService.deleteBatch(activeChatId, ids, true);
-    showToast(`Deleted ${ids.length} message(s)`);
-    exitSelectionMode();
+    try {
+      await telegramService.deleteBatch(activeChatId, ids, true);
+      showToast(`Deleted ${ids.length} message(s)`); exitSelectionMode();
+    } catch (error) { showToast((error as Error).message || 'Could not delete messages.'); }
   };
 
   const handleSendDisappearingMedia = async (params: {
@@ -719,14 +739,13 @@ export default function App() {
   };
 
   const handleSaveEdit = async (newText: string) => {
-    if (!activeChatId || !editingMessage) return;
+    if (!activeChatId || !editingMessage) return false;
     const targetMsg = editingMessage;
-    setEditingMessage(null);
     try {
       await telegramService.editMessage(activeChatId, targetMsg.id, newText);
-    } catch (err) {
-      showToast((err as Error).message || 'Could not edit message');
-    }
+      setEditingMessage(current => current?.id === targetMsg.id && current?.chatId === targetMsg.chatId ? null : current);
+      return true;
+    } catch (err) { showToast((err as Error).message || 'Could not edit message'); return false; }
   };
 
   const getWallpaperClass = () => {
@@ -845,7 +864,7 @@ export default function App() {
         palette={modSettingsStore.getActivePaletteTokens().name}
         deletedCount={totalDeletedItems}
         onBack={() => { setActiveView('chats'); setActiveBottomTab('chats'); setActiveNavItem('chats'); }}
-        onProfile={() => openSettings('general')}
+        onProfile={() => handleOpenUserProfile(authSession.user.id, authSession.user.firstName)}
         onLogin={() => setIsLoginModalOpen(true)}
         onSettings={openSettings}
         onDeleted={() => handleLeftNavClick('deleted')}
@@ -1005,7 +1024,7 @@ export default function App() {
           searchQuery={chatSearchQuery}
           onSearchChange={setChatSearchQuery}
           matchCount={trimmedChatSearch ? displayedMessages.length : 0}
-          onBackMobile={() => setActiveView('chats')}
+          onBackMobile={backToChats}
           onToggleInfoPanel={() => setShowInfoPanel(!showInfoPanel)}
           onOpenVoiceStudio={() => setIsVoiceStudioOpen(true)}
           onStartVoiceCall={() => startVoiceCallWithChat(activeChat, false)}
@@ -1034,6 +1053,8 @@ export default function App() {
                 onClick={() =>
                   setForwardPickerState({
                     isOpen: true,
+                    fromChatId: activeChatId!,
+                    messages: currentMessages.filter(m => selectedMsgIds.has(m.id)),
                     messageIds: Array.from(selectedMsgIds),
                   })
                 }
@@ -1257,14 +1278,14 @@ export default function App() {
     );
   };
 
+  const telegramNavigation = modSettings.navigationStyle === 'telegram' || (modSettings.navigationStyle === 'auto' && !modSettingsStore.getActivePaletteTokens().id.startsWith('flow-'));
   return (
-    <div className={`tg-app ${activeView !== 'chat_room' ? 'tg-root-tabs' : ''} h-[100dvh] w-full max-w-[100vw] bg-canvas dark:bg-canvas text-ink dark:text-ink flex font-sans select-none overflow-hidden`}>
-      {activeView !== 'chat_room' && <MobileBottomNav active={activeBottomTab === 'deleted' ? 'settings' : activeBottomTab} unread={totalUnread} onSelect={handleSelectBottomTab} />}
+    <div className={`tg-app ${activeView !== 'chat_room' && !telegramNavigation ? 'tg-root-tabs' : ''} h-[100dvh] w-full max-w-[100vw] bg-canvas dark:bg-canvas text-ink dark:text-ink flex font-sans select-none overflow-hidden`}>
+      {!telegramNavigation && activeView !== 'chat_room' && <MobileBottomNav active={activeBottomTab === 'deleted' ? 'settings' : activeBottomTab} unread={totalUnread} onSelect={handleSelectBottomTab} />}
       <CallRecordingIndicator onOpen={() => setIsCallsHubOpen(true)} />
       {/* Toast Notice */}
       {toastNotice && (
         <div role="status" aria-live="polite" className="fixed top-4 right-4 z-[60] px-4 py-2 rounded-xl bg-surface dark:bg-elevated border border-outline dark:border-outline text-xs font-medium shadow-xl flex items-center gap-2">
-          <Check className="w-4 h-4 text-primary" />
           <span>{toastNotice}</span>
         </div>
       )}
@@ -1528,13 +1549,13 @@ export default function App() {
           activeView === 'deleted'
             ? 'hidden lg:flex'
             : 'flex'
-        } w-full lg:w-80 xl:w-84 shrink-0 flex-col h-full`}
+        } tg-sidebar w-full lg:w-80 xl:w-84 shrink-0 flex-col h-full`}
       >
         {activeView === 'settings' || activeView === 'mod_features' ? (
-          <div className="flex-1 flex flex-col h-full lg:hidden">{renderMobileSubView()}</div>
+          <div className={telegramNavigation ? "flex-1 flex flex-col h-full" : "flex-1 flex flex-col h-full lg:hidden"}>{renderMobileSubView()}</div>
         ) : null}
 
-        <div className={`${activeView === 'settings' || activeView === 'mod_features' ? 'hidden lg:flex' : 'flex'} flex-1 flex-col h-full overflow-hidden`}>
+        <div className={`${activeView === 'settings' || activeView === 'mod_features' ? telegramNavigation ? 'hidden' : 'hidden lg:flex' : 'flex'} flex-1 flex-col h-full overflow-hidden`}>
           <ChatList
             chats={chats}
             currentUser={authSession.user}
@@ -1924,16 +1945,17 @@ export default function App() {
         }}
       />
 
-      {activeChat && (
+      {forwardPickerState.fromChatId && (
         <ForwardPickerModal
           isOpen={forwardPickerState.isOpen}
-          fromChatId={activeChat.id}
+          fromChatId={forwardPickerState.fromChatId}
+          messages={forwardPickerState.messages || []}
           messageIds={forwardPickerState.messageIds}
           chats={chats}
           onClose={() => setForwardPickerState({ isOpen: false, messageIds: [] })}
-          onForwarded={(count, targetTitles) => {
+          onForwarded={(count, targetTitles, scheduled) => {
             showToast(
-              `Forwarded ${count} item(s) to ${targetTitles.slice(0, 2).join(', ')}${
+              `${scheduled ? 'Scheduled' : 'Forwarded'} ${count} item(s) to ${targetTitles.slice(0, 2).join(', ')}${
                 targetTitles.length > 2 ? ` +${targetTitles.length - 2}` : ''
               }`
             );

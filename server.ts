@@ -3,6 +3,8 @@ import { registerMessageSearchRoutes } from './src/server/messageSearch';
 import { chooseThumbnail, imageMime, withFreshMedia } from './src/server/mediaLoading';
 import { parseByteRange } from './src/utils/byteRange';
 import { atomicDownload } from './src/utils/atomicDownload';
+import { normalizeForwardRequest, isForwardRestriction } from './src/utils/forwardOptions';
+import { createForwardJob, runForwardJob, type ForwardJob } from './src/server/messageForwarding';
 import express from 'express';
 import http from 'http';
 import path from 'path';
@@ -4274,7 +4276,7 @@ async function main() {
         });
         return res.json({ ok: true, bypassed: false });
       } catch (fwdErr) {
-        if (ayuConfig.bypassContentRestrictions) {
+        if (ayuConfig.bypassContentRestrictions && isForwardRestriction(fwdErr)) {
           if (existingVault) {
             await client.sendFile(toPeer, {
               file: existingVault.filePath,
@@ -6302,62 +6304,52 @@ async function main() {
 
   // --- Official Telegram Feature Parity Endpoints ---
 
-  // 1. Batch Multi-Forward to any Chat
+  // Keep delivery progress and Telegram random IDs for safe partial/network retries.
+  const forwardJobs = new Map<string, { signature: string; job: ForwardJob; at: number }>();
   app.post('/api/tg/messages/forward-batch', async (req, res) => {
     if (!client || !client.connected) return res.status(401).json({ error: 'Not authenticated' });
     try {
-      const fromChatId = String(req.body.fromChatId || '');
-      const toChatIds = Array.isArray(req.body.toChatIds)
-        ? (req.body.toChatIds as string[]).map(String)
-        : [String(req.body.toChatId || 'me')];
-      const messageIds = Array.isArray(req.body.messageIds)
-        ? (req.body.messageIds as number[]).map(Number).filter(Boolean)
-        : [];
-      const hideSenderTag = Boolean(req.body.hideSenderTag);
-
-      if (!fromChatId || messageIds.length === 0) {
-        return res.status(400).json({ error: 'Select at least one message to forward.' });
+      const request = normalizeForwardRequest(req.body);
+      request.toChatIds = [...new Set(request.toChatIds.map(id => {
+        if (id !== 'target') return id;
+        if (!savedTargetGroup) throw new Error('No Target Group set. Set a Target Group link first.');
+        return savedTargetGroup.id;
+      }))];
+      const requestId = String(req.body.requestId || helpers.generateRandomLong(true));
+      if (requestId.length > 100) throw new Error('Invalid forwarding request.');
+      const signature = JSON.stringify(request);
+      let entry = forwardJobs.get(requestId);
+      if (entry && entry.signature !== signature) throw new Error('Forward options changed. Start a new forward.');
+      if (!entry) {
+        for (const [id, old] of forwardJobs) if (!old.job.running && (Date.now() - old.at > 3600000 || forwardJobs.size >= 100)) forwardJobs.delete(id);
+        if (forwardJobs.size >= 100) throw new Error('Too many forwards in progress. Try again shortly.');
+        entry = { signature, job: createForwardJob(request), at: Date.now() }; forwardJobs.set(requestId, entry);
       }
-
-      const fromPeer = await resolvePeer(client, fromChatId);
-      for (const dest of toChatIds) {
-        const toPeer =
-          dest === 'target' && savedTargetGroup
-            ? await resolvePeer(client, savedTargetGroup.id)
-            : await resolvePeer(client, dest);
-        try {
-          await client.forwardMessages(toPeer, {
-            messages: messageIds,
-            fromPeer,
-            dropAuthor: hideSenderTag,
-          });
-        } catch (fwdErr) {
-          if (!ayuConfig.bypassContentRestrictions) throw fwdErr;
-          const msgs = await client.getMessages(fromPeer, { ids: messageIds });
-          for (const m of msgs) {
-            if (!m) continue;
-            const mediaInfo = detectMediaInfo(m);
-            if (mediaInfo) {
-              const entry = await cacheMediaToVault(client, fromChatId, fromChatId, m, Boolean(mediaInfo.isDisappearing));
-              if (entry && fs.existsSync(entry.filePath)) {
-                await client.sendFile(toPeer, {
-                  file: entry.filePath,
-                  caption: m.message || undefined,
-                  supportsStreaming: entry.mediaType === 'video',
-                });
-                continue;
-              }
-            }
-            if (m.message) {
-              await client.sendMessage(toPeer, { message: m.message });
-            }
-          }
-        }
-      }
-      return res.json({ ok: true, count: messageIds.length });
-    } catch (err) {
-      return res.status(400).json({ error: (err as Error).message });
-    }
+      const result = await runForwardJob(entry.job, client, id => resolvePeer(client!, id),
+        ayuConfig.bypassContentRestrictions ? async (toPeer, id, options, randomId) => {
+          const fromPeer = await resolvePeer(client!, options.fromChatId);
+          const messages = await client!.getMessages(fromPeer, { ids: [id] });
+          const message = messages[0];
+          if (!(message instanceof Api.Message)) throw new Error('Original message is no longer available.');
+          const info = detectMediaInfo(message);
+          if (info) {
+            const cached = await cacheMediaToVault(client!, options.fromChatId, options.fromChatId, message, Boolean(info.isDisappearing));
+            if (!cached || !fs.existsSync(cached.filePath)) throw new Error('Could not load this media for forwarding.');
+            const uploaded = await client!.uploadFile({ file: new CustomFile(path.basename(cached.filePath), fs.statSync(cached.filePath).size, cached.filePath), workers: 1 });
+            const media = info.type === 'photo'
+              ? new Api.InputMediaUploadedPhoto({ file: uploaded })
+              : new Api.InputMediaUploadedDocument({ file: uploaded, mimeType: cached.mimeType || 'application/octet-stream',
+                  attributes: message.media instanceof Api.MessageMediaDocument && message.media.document instanceof Api.Document ? message.media.document.attributes : [new Api.DocumentAttributeFilename({ fileName: cached.fileName })] });
+            await client!.invoke(new Api.messages.SendMedia({ peer: toPeer, media, randomId,
+              message: options.hideCaptions ? '' : message.message || '', entities: options.hideCaptions ? undefined : message.entities,
+              silent: options.silent, scheduleDate: options.scheduleDate }));
+          } else if (message.message) {
+            await client!.invoke(new Api.messages.SendMessage({ peer: toPeer, randomId, message: message.message,
+              entities: message.entities, silent: options.silent, scheduleDate: options.scheduleDate }));
+          } else throw new Error('This message cannot be copied.');
+        } : undefined);
+      return res.json(result);
+    } catch (error) { return res.status(400).json({ error: (error as Error).message }); }
   });
 
   // 2. Native Polls & Quizzes + Live Voting

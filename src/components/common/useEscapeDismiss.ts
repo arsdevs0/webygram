@@ -1,27 +1,31 @@
-import { useEffect, useRef } from 'react';
-
-const openDialogs: symbol[] = [];
-
-/** Only the topmost open panel consumes Escape. */
+import { useLayoutEffect, useRef } from 'react';
+import { createBackNavigation } from '../../utils/backNavigation';
+let navigation: ReturnType<typeof createBackNavigation> | undefined;
+function getNavigation() {
+  return navigation ??= createBackNavigation({
+    history: window.history,
+    listen: (type, callback) => {
+      window.addEventListener(type, callback, type === 'keydown');
+      return () => window.removeEventListener(type, callback, type === 'keydown');
+    },
+    defer: callback => { window.setTimeout(callback, 0); },
+  });
+}
+/** Browser/device Back and Escape dismiss only the topmost open surface. */
 export function useEscapeDismiss(open: boolean, onClose?: () => void) {
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-  useEffect(() => {
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  useLayoutEffect(() => {
     if (!open || !closeRef.current) return;
-    const token = Symbol('dialog');
     const previousFocus = document.activeElement as HTMLElement | null;
-    openDialogs.push(token);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented && openDialogs.at(-1) === token) {
-        event.preventDefault();
-        closeRef.current?.();
-      }
-    };
-    document.addEventListener('keydown', onKey);
+    const remove = getNavigation().add(() => closeRef.current?.());
     return () => {
-      openDialogs.splice(openDialogs.indexOf(token), 1);
-      document.removeEventListener('keydown', onKey);
-      if (previousFocus?.isConnected) previousFocus.focus();
+      remove();
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
   }, [open]);
+}
+export function useAppBack(enabled: boolean, onBack: () => void) {
+  const backRef = useRef(onBack); backRef.current = onBack;
+  useLayoutEffect(() => { getNavigation().setFallback(enabled ? () => backRef.current() : undefined); });
+  useLayoutEffect(() => () => getNavigation().setFallback(undefined), []);
 }
