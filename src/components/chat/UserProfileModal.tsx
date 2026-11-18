@@ -1,8 +1,9 @@
+import { ProfileGroups } from './ProfileGroups';
 import { Avatar } from '../common/Avatar';
 import { SharedMediaTabs } from './SharedMediaTabs';
 import React, { useState, useEffect } from 'react';
 import {
-  X,
+  X, ArrowLeft, MoreVertical, Bell, BellOff,
   Phone,
   Video,
   AtSign,
@@ -20,7 +21,7 @@ import {
   Play,
   Download,
   Loader2,
-  Users,
+  Users, UserPlus,
 } from 'lucide-react';
 import { UserProfileInfo, TelegramMessage, MediaAttachment } from '../../types/telegram';
 import { telegramService } from '../../services/telegramService';
@@ -36,6 +37,7 @@ interface UserProfileModalProps {
   onStartVideoCall?: (user: UserProfileInfo) => void;
   onOpenMedia: (media: MediaAttachment, msgId: string) => void;
   onNotify?: (msg: string) => void;
+  onOpenChatByLink?: (link: string) => void | Promise<void>;
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -49,7 +51,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onStartVideoCall,
   onOpenMedia,
   onNotify,
+  onOpenChatByLink,
 }) => {
+  const [profileTab,setProfileTab] = useState<'groups'|'media'>('media');
+  const [contactAdded,setContactAdded] = useState(false), [addingContact,setAddingContact]=useState(false);
+  const [,refreshMute]=useState(0);
+  useEffect(()=>telegramService.subscribe(()=>refreshMute(v=>v+1)),[]);
   const [profile, setProfile] = useState<UserProfileInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +83,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       .then((data) => {
         if (!cancelled) {
           setProfile(data);
+          setContactAdded(Boolean(data.isContact));setProfileTab(data.commonChatsCount ? 'groups' : 'media');
         }
       })
       .catch((err) => {
@@ -97,11 +105,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   if (!isOpen || !userId) return null;
 
-  const copyValue = (val: string, label: string) => {
-    void navigator.clipboard.writeText(val);
-    setCopiedField(label);
-    onNotify?.(`${label} copied to clipboard`);
-    setTimeout(() => setCopiedField(null), 1800);
+  const copyValue = async (val: string, label: string) => {
+    try { await navigator.clipboard.writeText(val); setCopiedField(label); onNotify?.(label+' copied to clipboard'); setTimeout(()=>setCopiedField(null),1800); }
+    catch { onNotify?.('Could not copy. Check clipboard permission.'); }
   };
 
   const handleToggleBlock = async () => {
@@ -125,38 +131,26 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full h-[100dvh] sm:h-auto sm:max-h-[88vh] sm:max-w-[420px] bg-surface dark:bg-surface sm:rounded-2xl border-0 sm:border border-outline dark:border-outline shadow-2xl flex flex-col overflow-hidden text-ink dark:text-ink"
+        className="tg-user-profile-surface w-full h-[100dvh] sm:h-auto sm:max-h-[88vh] sm:max-w-[420px] bg-surface dark:bg-surface sm:rounded-2xl border-0 sm:border border-outline dark:border-outline shadow-2xl flex flex-col overflow-hidden text-ink dark:text-ink"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-surface dark:bg-surface border-b border-outline dark:border-white/[0.06] shrink-0">
+        <div className="tg-profile-topbar flex items-center justify-between px-4 py-3 shrink-0">
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={onClose} aria-label="Close profile"
               className="p-2 -ml-1 rounded-full text-muted dark:text-muted hover:text-ink dark:hover:text-white hover:bg-hover dark:hover:bg-hover transition-colors cursor-pointer"
             >
-              <X size={20} />
+              <ArrowLeft size={20} />
             </button>
-            <span className="font-semibold text-[16px]">User Info</span>
+
           </div>
-          {profile && (
-            <button
-              type="button"
-              onClick={() => {
-                onOpenDirectChat(profile);
-                onClose();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-colors shadow-sm cursor-pointer"
-            >
-              <MessageSquare size={14} />
-              <span>Message</span>
-            </button>
-          )}
+          {profile && <button type="button" aria-label={profile.isBlocked ? 'Unblock user' : 'Block user'} disabled={isTogglingBlock} onClick={() => void handleToggleBlock()} className="tg-icon-button"><ShieldAlert /></button>}
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-outline dark:divide-outline bg-surface-low dark:bg-canvas">
+        <div className="tg-user-profile-scroll flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-canvas">
           {isLoading ? (
             <div className="p-10 flex flex-col items-center justify-center gap-3 bg-surface dark:bg-surface">
               <Loader2 size={28} className="animate-spin text-primary" />
@@ -176,7 +170,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           ) : (
             <>
               {/* Hero Card */}
-              <div className="p-5 bg-surface dark:bg-surface flex flex-col items-center text-center relative">
+              <div className="tg-peer-profile-hero p-4 flex flex-col items-center text-center relative">
                 <button type="button" aria-label="Open profile photo" className="mb-3" onClick={()=>onOpenMedia({type:'photo',url:profile.avatarUrl || '/api/tg/avatar/'+encodeURIComponent(profile.id),fileName:profile.title+' profile photo'},'avatar:'+profile.id)}><Avatar src={profile.avatarUrl} title={profile.title} id={profile.id} size="xl" /></button>
 
                 <div className="flex items-center justify-center gap-1.5 max-w-full px-2">
@@ -205,7 +199,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </p>
 
                 {/* Primary Action Buttons */}
-                <div className="grid grid-cols-4 gap-2 w-full mt-4 pt-3 border-t border-outline dark:border-white/[0.06]">
+                <div className="tg-peer-actions">
                   <button
                     type="button"
                     onClick={() => {
@@ -217,6 +211,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     <MessageSquare size={17} />
                     <span className="text-[10.5px] font-medium">Message</span>
                   </button>
+                  <button type="button" aria-label={telegramService.getChats().find(c => c.id === userId)?.isMuted ? 'Unmute' : 'Mute'} onClick={async () => { try { telegramService.ensureDirectChatFromProfile(profile); await telegramService.toggleMuteChat(userId); onNotify?.('Notification setting updated'); } catch(error) { onNotify?.((error as Error).message); } }}><Bell /><span>{telegramService.getChats().find(c => c.id === userId)?.isMuted ? 'Unmute' : 'Mute'}</span></button>
 
                   <button
                     type="button"
@@ -251,24 +246,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     <span className="text-[10.5px] font-medium">Video</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleToggleBlock}
-                    disabled={isTogglingBlock}
-                    className={`flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl bg-elevated dark:bg-elevated hover:bg-hover dark:hover:bg-hover transition-colors cursor-pointer ${
-                      profile.isBlocked ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-red-400'
-                    }`}
-                  >
-                    <ShieldAlert size={17} />
-                    <span className="text-[10.5px] font-medium">
-                      {profile.isBlocked ? 'Unblock' : 'Block'}
-                    </span>
-                  </button>
+
                 </div>
               </div>
 
               {/* Bio / Username / Phone Details */}
-              <div className="bg-surface dark:bg-surface p-4 space-y-3.5 mt-2">
+              <div className="tg-peer-description space-y-3.5">
                 {profile.about && (
                   <div className="flex items-start gap-3.5">
                     <Info size={19} className="text-muted dark:text-muted shrink-0 mt-0.5" />
@@ -303,16 +286,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   </div>
                 )}
 
-                {profile.phone && (
+                {(
+
                   <div
-                    onClick={() => copyValue(`+${profile.phone}`, 'Phone')}
+                    onClick={() => { if (profile.phone) copyValue(`+${profile.phone}`, 'Phone'); }}
                     className="flex items-center justify-between gap-3 cursor-pointer hover:bg-hover dark:hover:bg-white/[0.03] -mx-2 px-2 py-1.5 rounded-lg transition-colors"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
                       <Phone size={19} className="text-muted dark:text-muted shrink-0" />
                       <div className="min-w-0">
                         <p className="text-[14px] font-medium truncate">
-                          +{profile.phone}
+                          {profile.phone ? '+' + profile.phone : 'Unknown'}
                         </p>
                         <span className="text-[11px] text-muted dark:text-muted">Phone</span>
                       </div>
@@ -338,7 +322,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 )}
               </div>
 
-              <SharedMediaTabs key={userId} chatId={userId} messages={telegramService.getMessages(userId)} onOpenMedia={onOpenMedia} />
+              {!contactAdded && <button type="button" className="tg-next-card tg-next-row w-full" disabled={addingContact} onClick={async()=>{setAddingContact(true);try{await telegramService.addProfileContact(profile);setContactAdded(true);onNotify?.('Contact added');}catch(error){onNotify?.((error as Error).message);}finally{setAddingContact(false);}}}><UserPlus className="text-muted"/><span>{addingContact?'Adding contact…':'Add to contacts'}</span></button>}
+              <div className="tg-shared-tabs" role="tablist" aria-label="Profile sections"><button type="button" role="tab" aria-selected={profileTab==='groups'} onClick={()=>setProfileTab('groups')}>Groups</button><button type="button" role="tab" aria-selected={profileTab==='media'} onClick={()=>setProfileTab('media')}>Shared media</button></div>
+              {profileTab==='groups' ? <ProfileGroups key={userId} userId={userId} onOpen={async id=>{try{await onOpenChatByLink?.(id);onClose();}catch(error){onNotify?.((error as Error).message);}}} /> : <SharedMediaTabs key={userId} chatId={userId} messages={telegramService.getMessages(userId)} onOpenMedia={onOpenMedia} onOpenChatByLink={onOpenChatByLink} />}
             </>
           )}
         </div>

@@ -210,7 +210,7 @@ export default function App() {
     else if (replyingTo) setReplyingTo(null);
     else if (activeTopicId !== null) { setActiveTopicId(null); if (activeChatId) void telegramService.loadMessages(activeChatId, 0); }
     else backToChats();
-  }, () => showToast('Press Back again quickly to exit'));
+  });
 
   const toastTimerRef = useRef<number | null>(null);
   const showToast = useCallback((msg: string) => {
@@ -904,7 +904,7 @@ export default function App() {
   const powerSaving = !modSettings.enableSmoothAnimations && !modSettings.autoPlayGifs;
   const togglePowerSaving = () => { modSettingsStore.updateSetting("enableSmoothAnimations", powerSaving); modSettingsStore.updateSetting("autoPlayGifs", powerSaving); };
   const renderMobileSubView = () => {
-    if (activeView === "contacts") return <ContactsView accountId={authSession.user.id} connected={authSession.isConnected} onBack={backToChats} onLogin={handleOpenLoginModal} onOpenContact={contact => handleOpenUserProfile(contact.id, contact.title)} onAddContact={() => setIsContactFinderOpen(true)} />;
+    if (activeView === "contacts") return <ContactsView accountId={authSession.user.id} connected={authSession.isConnected} onBack={backToChats} onLogin={handleOpenLoginModal} onOpenContact={contact => handleOpenUserProfile(contact.id, contact.title)} onAddContact={() => setIsContactFinderOpen(true)} onCalls={() => setIsCallsHubOpen(true)} />;
     if (activeView === "you") return <SelfProfileView session={authSession} onBack={backToChats} onEdit={() => openSettings("general")} onSettings={() => handleSelectBottomTab("settings")} onPrivacy={() => openSettings("privacy")} onNotifications={() => openSettings("notifications")} onData={() => setIsDataSettingsOpen(true)} onAppearance={() => setIsModSettingsOpen(true)} onNotify={showToast} />;
     if (activeView === "folders") return <ChatFoldersView folders={folders} chats={chats} activeId={activeFolderId} onBack={() => handleSelectBottomTab("settings")} onManage={() => setIsFolderManagerOpen(true)} onSelect={id => { setActiveFolderId(id); backToChats(); }} />;
     if (activeView === 'settings') {
@@ -1723,9 +1723,11 @@ export default function App() {
         >
           <div onClick={(e) => e.stopPropagation()} className="h-full flex">
             <ChatInfoPanel
+              onOpenSharedMessage={message=>{if(!activeChat)return;if(document.getElementById("msg-"+message.id))handleJumpToMessage(message.id);else void handleOpenSearchMessage({chat:activeChat,message}).catch(error=>showToast(error.message));}}
               key={activeChat.id}
               chat={activeChat}
-              messages={currentMessages}
+              onJumpToMessage={handleJumpToMessage}
+          messages={currentMessages}
               isOpen={showInfoPanel}
               onClose={() => setShowInfoPanel(false)}
               onOpenMedia={(media, messageId) => setActiveViewerMedia({ media, messageId })}
@@ -2078,6 +2080,7 @@ export default function App() {
       />
 
       <UserProfileModal
+        onOpenChatByLink={handleOpenChatByLink}
         isOpen={Boolean(activeUserProfileId)}
         userId={activeUserProfileId}
         contextChatId={activeChatId}

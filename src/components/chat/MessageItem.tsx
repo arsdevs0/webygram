@@ -513,7 +513,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
       ? 'text-[12.5px]'
       : modSettings.fontSize === 'large'
       ? 'text-[15px]'
-      : 'text-[13.5px]';
+      : 'text-[16px]';
 
   if (isFilteredOut) {
     return (

@@ -1,3 +1,4 @@
+import { registerProfileActions } from './src/server/profileActions';
 import { registerNativeCallRoutes, serializeNativeCall } from './src/server/nativeCalls';
 import { registerContactRoutes } from './src/server/contacts';
 import { registerCallRecordingRoutes } from './src/server/callRecordings';
@@ -3787,6 +3788,8 @@ async function main() {
           ? new Api.InputMessagesFilterRoundVoice()
           : filterType === 'links' ? new Api.InputMessagesFilterUrl()
           : filterType === 'music' ? new Api.InputMessagesFilterMusic()
+          : filterType === 'gifs' ? new Api.InputMessagesFilterGif()
+          : filterType === 'polls' ? new Api.InputMessagesFilterEmpty()
           : new Api.InputMessagesFilterPhotoVideo();
 
       const collectedMsgs: Api.Message[] = [];
@@ -3833,7 +3836,7 @@ async function main() {
       }
 
       const rawValid = collectedMsgs
-        .filter((m): m is Api.Message => m instanceof Api.Message && (filterType === 'links' || Boolean(detectMediaInfo(m))))
+        .filter((m): m is Api.Message => m instanceof Api.Message && (filterType === 'polls' ? m.media instanceof Api.MessageMediaPoll : filterType === 'links' || Boolean(detectMediaInfo(m))))
         .sort((a, b) => b.id - a.id);
 
       const items = rawValid.map((m) => {
@@ -3843,7 +3846,7 @@ async function main() {
         return ser;
       });
 
-      const oldestId = rawValid.length > 0 ? Math.min(...rawValid.map((m) => m.id)) : 0;
+      const oldestId = collectedMsgs.length > 0 ? Math.min(...collectedMsgs.map((m) => m.id)) : 0;
       return res.json({
         items,
         hasMore: lastBatchLen >= 40,
@@ -5721,6 +5724,7 @@ async function main() {
             avatarUrl: photoPresent ? `/api/tg/avatar/${encodeURIComponent(idStr)}` : '',
             status,
             isBot: Boolean(ent.bot),
+            isContact: Boolean(ent.contact || ent.mutualContact),
             isVerified: Boolean(ent.verified),
             isPremium: Boolean(ent.premium),
             isBlocked,
@@ -7516,6 +7520,7 @@ async function main() {
   });
 
   registerContactRoutes(app, { client: () => client, cache: peerEntityCache });
+  registerProfileActions(app, { client: () => client, cache: peerEntityCache, resolveUser: async (active, id) => active.getInputEntity(await active.getEntity(await resolvePeer(active, id))) });
 
   app.post('/api/tg/contacts/:chatId/block', async (req, res) => {
     if (!client || !client.connected) return res.status(401).json({ error: 'Not authenticated' });

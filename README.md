@@ -29,7 +29,7 @@ Keep one app tab open, connected and awake for local auto-save, anti-delete, aut
 
 Forwarding has a recipient picker and preview with sender-name/caption controls, comments, silent sending and scheduling. Caption removal also hides sender names, as Telegram requires. Partial retries preserve delivered destinations and Telegram random IDs during the same app/engine session.
 
-Browser/device Back and Escape close the current menu or panel, then return from the chat to the list. At the root, one Back keeps the app open and prompts for a quick second press. Two root Back presses within 700 ms can leave the app; closing a chat/panel does not count toward exit. The mobile bar has Chats, Contacts, Settings and You; the account sheet, grouped settings and pill folders use the requested new layout in both themes. Flow themes remain selectable.
+Browser/device Back and Escape close the current menu or panel, then return from the chat to the list. At the root, isolated, rapid double and repeated Back presses stay in the app. The mobile bar has Chats, Contacts, Settings and Profile. The supplied Telegram mobile reference defines one layout in Light and Dark, with subtle glass on floating navigation, chat headers and composer. Existing saved alternate appearances migrate to this design; privacy and media preferences survive.
 
 ## Appearance and audio
 
@@ -80,10 +80,16 @@ The compose pencil opens a searchable contact picker with New Group/New Channel 
 
 Telegram album IDs survive serialization, rendering, preview and forwarding. Chat profiles share Media, Files, Links, Music and Voice tabs with pagination, retry feedback and open/play/download actions. The viewer supports previous/next buttons, horizontal swipes and keyboard arrows. Profile photos open in the viewer, and personal shared media uses its own source chat.
 
-Images and avatar fetches wait until near the viewport; retries preserve embedded/blob/signed URLs. Offscreen animated-video previews pause. Default light/dark surfaces use Telegram colors, and semantic foregrounds keep controls readable across selectable palettes. Notifications and Sounds now has independent, saved message-alert and app-sound switches; individual chat mute also suppresses incoming alerts.
+Images and avatar fetches wait until near the viewport; retries preserve embedded/blob/signed URLs. Offscreen animated-video previews pause. Default light/dark surfaces use Telegram colors, and semantic foregrounds keep controls readable in both supported modes. Notifications and Sounds now has independent, saved message-alert and app-sound switches; individual chat mute also suppresses incoming alerts.
 
 Active group/channel voice chats show a live or scheduled banner and participant info, refreshed while the app is visible. Joining group calls still requires native Telegram; this banner does not implement the group-call transport.
 
 Local voice processing now locks bins to actual spectral peaks, crossfades consonants in the complex spectrum and uses gentler EQ. Unvoiced audio is regression-tested for waveform preservation. GitHub realtime AI projects such as [w-okada](https://github.com/w-okada/voice-changer/blob/master/README_en.md) use a separate conversion server/high-performance runtime; that is not bundled into this mobile-local build.
 
-The stress test covers long lists/histories, touch scrolling, group/channel arrows, album forwarding, shared-media playback/opening, gallery navigation, every selectable palette, saved alert controls and browser exit timing. It uses simulated Telegram RPCs and actual browser rendering, media decode and WebRTC; device/account checks remain separate.
+The stress test covers long lists/histories, touch scrolling, group/channel arrows, album forwarding, shared-media playback/opening, gallery navigation, both supported Telegram modes, saved alert controls and repeated Back protection. It uses simulated Telegram RPCs and actual browser rendering, media decode and WebRTC; device/account checks remain separate.
+
+## Telegram reference update
+
+Profiles use centered photos, rounded actions, segmented shared-history tabs and a four-column media grid. Shared Groups and Add Contact use authenticated Telegram RPCs; Polls open the original chat message and GIFs have their own tab. The profile options menu closes before the underlying profile on Back.
+
+Run `node scripts/test-telegram-reference.mjs <path-to-playwright/index.mjs>` to capture and check the light/dark mobile reference screens, subtle glass, shared-group pagination, contact actions, polls and GIFs. These use simulated Telegram responses; live device/account verification remains separate.

@@ -1,3 +1,4 @@
+import { useEscapeDismiss } from '../common/useEscapeDismiss';
 import { SharedMediaTabs } from './SharedMediaTabs';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -74,6 +75,8 @@ interface Props {
   onOpenMedia: (media: MediaAttachment, messageId: string) => void;
   onOpenDisappearingModal?: () => void;
   onOpenScheduled?: () => void;
+  onJumpToMessage?: (id: string) => void;
+  onOpenSharedMessage?: (message: TelegramMessage) => void;
   onOpenAyuGram?: () => void;
   onOpenChatByLink?: (link: string) => void;
   onOpenUserProfile?: (userId: string, fallbackName?: string) => void;
@@ -88,11 +91,16 @@ export const ChatInfoPanel: React.FC<Props> = ({
   onOpenMedia,
   onOpenDisappearingModal,
   onOpenScheduled,
+  onJumpToMessage,
+  onOpenSharedMessage,
   onOpenAyuGram,
   onOpenChatByLink,
   onOpenUserProfile,
   onNotify,
 }) => {
+  const [profileOptions,setProfileOptions] = useState(false);
+  useEscapeDismiss(profileOptions,()=>setProfileOptions(false));
+  useEffect(()=>setProfileOptions(false),[chat.id,isOpen]);
   // Default to 'media' so shared group/channel media is immediately visible like official Telegram
   const [activeMediaTab, setActiveMediaTab] = useState<'media' | 'files' | 'links' | 'voice'>('media');
   const [ayuSettings, setAyuSettings] = useState<AyuGramSettings>(ayuGramEngine.getSettings());
@@ -721,9 +729,9 @@ export const ChatInfoPanel: React.FC<Props> = ({
     : 'last seen recently';
 
   return (
-    <div className="fixed inset-0 sm:static sm:w-80 xl:w-88 border-l border-outline dark:border-outline bg-surface dark:bg-surface flex flex-col h-[100dvh] sm:h-full z-40 overflow-hidden text-ink dark:text-ink shrink-0">
+    <div className="tg-chat-profile-panel fixed inset-0 sm:static sm:w-80 xl:w-88 border-l border-outline dark:border-outline bg-surface dark:bg-surface flex flex-col h-[100dvh] sm:h-full z-40 overflow-hidden text-ink dark:text-ink shrink-0">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-outline dark:border-outline">
+      <div className="tg-profile-topbar flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -771,19 +779,20 @@ export const ChatInfoPanel: React.FC<Props> = ({
           )}
           <button
             type="button"
-            onClick={() => telegramService.togglePinChat(chat.id)}
+            aria-label="Profile options" aria-expanded={profileOptions} onClick={() => setProfileOptions(v=>!v)}
             className="p-1.5 text-muted hover:text-primary dark:text-muted dark:hover:text-white rounded-lg hover:bg-hover dark:hover:bg-hover cursor-pointer"
-            title={chat.isPinned ? 'Unpin Chat' : 'Pin Chat'}
+            title="Profile options"
           >
             <MoreVertical className="w-4.5 h-4.5" />
           </button>
         </div>
       </div>
 
+      {profileOptions && <><button aria-label="Close profile options" className="fixed inset-0 z-40" onClick={()=>setProfileOptions(false)}/><div role="menu" aria-label="Profile options" className="absolute right-3 top-14 z-50 bg-surface border border-outline rounded-2xl p-2 w-52 shadow-xl"><button role="menuitem" className="tg-next-row" onClick={()=>{telegramService.togglePinChat(chat.id);setProfileOptions(false);}}>{chat.isPinned?'Unpin Chat':'Pin Chat'}</button><button role="menuitem" className="tg-next-row" onClick={()=>{void telegramService.toggleMuteChat(chat.id);setProfileOptions(false);}}>{chat.isMuted?'Unmute':'Mute'}</button><button role="menuitem" className="tg-next-row" onClick={()=>{setProfileOptions(false);onClose();}}>Open chat</button></div></>}
       {/* Scrollable Profile & Details Body */}
-      <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5">
+      <div className="tg-peer-profile-scroll flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3.5">
         {/* Centered Profile Hero */}
-        <div className={`flex flex-col items-center text-center space-y-2 pt-1 ${chat.isDeletedChat ? 'opacity-70' : ''}`}>
+        <div className={`tg-peer-profile-hero flex flex-col items-center text-center space-y-2 pt-1 ${chat.isDeletedChat ? 'opacity-70' : ''}`}>
           <div
             className="relative cursor-pointer" role="button" tabIndex={0} aria-label="Open profile photo" onKeyDown={event=>{if(event.target===event.currentTarget && (event.key==='Enter' || event.key===' ')){event.preventDefault();onOpenMedia({type:'photo',url:chat.avatarUrl || '/api/tg/avatar/'+encodeURIComponent(chat.id),fileName:displayTitle+' profile photo'},'avatar:'+chat.id);}}}
             onClick={() => {
@@ -824,56 +833,15 @@ export const ChatInfoPanel: React.FC<Props> = ({
             )}
           </div>
 
-          {effectiveAbout && (
-            <p className="text-xs text-muted dark:text-muted leading-relaxed text-center max-w-[250px] whitespace-pre-wrap">
-              {effectiveAbout}
-            </p>
-          )}
-
-          {/* Action Row */}
-          {!chat.isDeletedChat && (
-            <div className="w-full flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => telegramService.togglePinChat(chat.id)}
-                className="flex-1 py-2 px-2.5 rounded-xl bg-elevated dark:bg-elevated hover:bg-hover dark:hover:bg-hover border border-outline dark:border-outline text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Pin className="w-3.5 h-3.5 text-primary" />
-                <span>{chat.isPinned ? 'Unpin' : 'Pin'}</span>
-              </button>
-              {isGroupOrChannel && canEdit && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowEditSection(!showEditSection);
-                    if (!details) void loadChatDetails();
-                  }}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>{showEditSection ? 'Close Settings' : 'Manage & Edit'}</span>
-                </button>
-              )}
-              {(chat.type === 'user' || chat.type === 'bot') && (
-                <button
-                  type="button"
-                  disabled={blockingBusy}
-                  onClick={() => void handleToggleBlockUser()}
-                  className={`flex-1 py-2 px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                    isUserBlocked
-                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/50 text-rose-500'
-                  }`}
-                >
-                  <Ban className="w-3.5 h-3.5" />
-                  <span>{blockingBusy ? '...' : isUserBlocked ? 'Unblock' : 'Block'}</span>
-                </button>
-              )}
-            </div>
-          )}
+          {!chat.isDeletedChat && <div className="tg-peer-actions">
+            <button type="button" onClick={() => void telegramService.toggleMuteChat(chat.id)}>{chat.isMuted ? <BellOff /> : <Bell />}<span>{chat.isMuted ? 'Unmute' : 'Mute'}</span></button>
+            <button type="button" onClick={() => { if (chat.type === 'channel' && details?.linkedChatId && onOpenChatByLink) { onOpenChatByLink(details.linkedChatId); onClose(); } else onClose(); }}><MessageSquare /><span>{chat.type === 'channel' && details?.linkedChatId ? 'Discuss' : 'Message'}</span></button>
+            {isGroupOrChannel && <button type="button" onClick={() => void handleDangerAction('leave')}><LogOut /><span>{confirmDangerAction === 'leave' ? 'Confirm leave' : 'Leave'}</span></button>}
+          </div>}
         </div>
+        {(effectiveAbout || displayHandle) && <div className="tg-peer-description">{effectiveAbout && <p>{effectiveAbout}</p>}{displayHandle && <a href={'https://t.me/' + displayHandle.replace(/^@/, '')} target="_blank" rel="noopener noreferrer">{displayHandle}</a>}<small>Description</small></div>}
 
-        <SharedMediaTabs key={chat.id} chatId={chat.id} messages={messages} onOpenMedia={onOpenMedia} onOpenChatByLink={onOpenChatByLink} />
+        <SharedMediaTabs key={chat.id} chatId={chat.id} messages={messages} onOpenMedia={onOpenMedia} onOpenChatByLink={onOpenChatByLink} onOpenMessage={message=>{onClose();if(onOpenSharedMessage)onOpenSharedMessage(message);else onJumpToMessage?.(message.id);}} />
 
         {/* FULL OFFICIAL TELEGRAM EDIT GROUP / CHANNEL SETTINGS PANEL (ADMIN ONLY) */}
         {showEditSection && isGroupOrChannel && canEdit && (

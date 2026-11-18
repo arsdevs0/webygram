@@ -1,12 +1,12 @@
-/** Telegram's default light surfaces and dark violet accents. */
+/** The supplied Telegram mobile reference: white/green day and navy/blue night. */
 export function modernTelegramColors(mode: 'light' | 'dark' | 'amoled') {
   const light = mode === 'light';
-  return { bgMain: light ? '#F1F3F5' : mode === 'amoled' ? '#000000' : '#181818',
-    bgPanel: light ? '#FFFFFF' : mode === 'amoled' ? '#080808' : '#212121', bgElevated: light ? '#F4F4F5' : '#2C2C2C',
-    bubbleOut: light ? '#E3FFC8' : '#766AC8', bubbleOutBorder: light ? '#D2EDBA' : '#766AC8',
-    bubbleIn: light ? '#FFFFFF' : '#212121', bubbleInBorder: light ? '#E5E7EB' : '#303030',
-    border: light ? '#E5E7EB' : '#303030', text: light ? '#111827' : '#FFFFFF',
-    muted: light ? '#707579' : '#AAAAAA', primary: light ? '#3390EC' : '#8774E1',
+  return { bgMain: light ? '#F0F0F3' : '#141F28',
+    bgPanel: light ? '#FFFFFF' : '#1B2B38', bgElevated: light ? '#E8EEF1' : '#243746',
+    bubbleOut: light ? '#ECFFD9' : '#315FBC', bubbleOutBorder: light ? '#DBEACD' : '#315FBC',
+    bubbleIn: light ? '#FFFFFF' : '#1F303D', bubbleInBorder: light ? '#E1E7DD' : '#1F303D',
+    border: light ? '#E2E5E7' : '#31424F', text: light ? '#1B1E20' : '#FFFFFF',
+    muted: light ? '#747A7E' : '#92A5B2', primary: light ? '#00A7E7' : '#00AEF0',
     isLight: light, onPrimary: '#FFFFFF',
-    previewSwatches: [light ? '#F1F3F5' : '#181818', light ? '#FFFFFF' : '#212121', light ? '#3390EC' : '#8774E1'] as [string, string, string] };
+    previewSwatches: [light ? '#FFFFFF' : '#141F28', light ? '#ECFFD9' : '#1B2B38', light ? '#00A7E7' : '#00AEF0'] as [string, string, string] };
 }

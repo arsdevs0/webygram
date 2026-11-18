@@ -814,9 +814,9 @@ export const ChatInput: React.FC<Props> = ({
           </button>
         </div>
       ) : (
-        <div className="flex items-end gap-2 px-2.5 py-2 sm:px-3.5 sm:py-2.5">
+        <div className="tg-composer-row">
           {/* Official Telegram Rounded Pill Input Container */}
-          <div className="flex-1 min-w-0 flex items-end gap-1 px-2.5 py-1 rounded-[24px] bg-elevated dark:bg-canvas border border-outline/80 dark:border-white/[0.07] focus-within:border-primary/60 focus-within:bg-elevated shadow-inner transition-colors">
+          <div className="tg-composer-field">
             {/* Left Emoji / Sticker / GIF Toggle Button */}
             <button
               type="button"
@@ -875,7 +875,7 @@ export const ChatInput: React.FC<Props> = ({
                 setShowExpressionDrawer(false);
                 onOpenDisappearingModal();
               }}
-              className="p-1.5 text-muted dark:text-muted hover:text-amber-400 rounded-full transition-colors cursor-pointer shrink-0"
+              className="hidden sm:flex p-1.5 text-muted dark:text-muted hover:text-amber-400 rounded-full transition-colors cursor-pointer shrink-0"
               title="Send Timed / Self-Destructing Photo or Video"
             >
               <Clock className="w-[20px] h-[20px]" />
@@ -1048,7 +1048,7 @@ export const ChatInput: React.FC<Props> = ({
               disabled={isVoiceBusy || Boolean(pendingVoice)}
               aria-label={isVoiceBusy ? "Starting microphone" : voiceState.enabled ? "Record Voice (" + activePresetName + ")" : "Record Voice Message"}
               onClick={handleStartVoiceRecording}
-              className="w-11 h-11 rounded-full bg-elevated dark:bg-canvas hover:bg-primary/15 text-muted dark:text-muted hover:text-primary border border-outline/80 dark:border-white/[0.07] flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+              className="tg-composer-mic w-11 h-11 rounded-full bg-primary text-on-primary flex items-center justify-center shrink-0 cursor-pointer"
               title={voiceState.enabled ? `Record Voice (${activePresetName})` : 'Record Voice Message'}
             >
               <Mic className="w-[21px] h-[21px]" />

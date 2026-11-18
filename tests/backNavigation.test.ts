@@ -49,8 +49,10 @@ test('root guard survives isolated and slow repeated Back presses', () => {
  h.pop();h.advance(900);h.pop();h.advance(900);h.pop();
  assert.equal(hints,3);assert.equal(h.backs(),0);assert.equal(h.pushes(),4);
 });
-test('only rapid double Back at root releases the browser history', () => {
- const h=harness();h.nav.setExitProtection(()=>{});h.pop();h.advance(350);h.pop();assert.equal(h.backs(),1);
+test('rapid and repeated root Back always rearms without exiting', () => {
+ const h=harness();h.nav.setExitProtection(()=>{});
+ for(const delay of [0,20,50,350,700,900,10]){h.advance(delay);h.pop();}
+ assert.equal(h.backs(),0);assert.equal(h.pushes(),8);
 });
 test('closing a chat does not count as the first exit Back', () => {
  const h=harness();let hints=0;h.nav.setExitProtection(()=>hints++);h.nav.setFallback(()=>h.nav.setFallback());

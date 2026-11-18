@@ -30,7 +30,7 @@ try {
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
   await page.goto(url);
   const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('tg_plus_mod_settings_v2')));
-  assert.equal(migrated.designVersion, 3); assert.equal(migrated.navigationStyle, 'telegram'); assert.equal(migrated.hideOnlineStatus, true);
+  assert.equal(migrated.designVersion, 4); assert.equal(migrated.navigationStyle, 'telegram'); assert.equal(migrated.hideOnlineStatus, true);
   const openAlice = async () => { await page.getByText('Alice', { exact: true }).first().click(); await page.locator('#msg-1').waitFor({ state: 'visible' }); };
   const openForward = async () => { await page.locator('#msg-1').getByTitle('More', { exact: true }).click(); await page.getByRole('button', { name: 'Forward to Chat...' }).click(); await page.getByRole('dialog', { name: 'Forward messages' }).waitFor(); };
   const back = async () => { await page.evaluate(() => history.back()); await page.waitForTimeout(120); };
@@ -115,7 +115,7 @@ try {
   await page.getByRole("button", { name: "Chat Folders", exact: true }).click();
   await page.getByRole("heading", { name: "Chat Folders", exact: true }).waitFor();
   await page.screenshot({ path: ".local/telegram-next-folders-dark.png", fullPage: true });
-  await back(); await nav.getByRole("button", { name: "You", exact: true }).click();
+  await back(); await nav.getByRole("button", { name: "Profile", exact: true }).click();
   await page.getByRole("region", { name: "Your profile" }).waitFor();
   await page.getByText("@tester", { exact: true }).waitFor();
   await page.screenshot({ path: ".local/telegram-next-profile-dark.png", fullPage: true });

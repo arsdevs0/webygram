@@ -28,7 +28,7 @@ import {
   FolderCog,
   ChevronDown,
   Menu,
-  Edit2,
+  Edit2, MessageCircle, Plus,
   Users,
   User,
   Bookmark,
@@ -706,7 +706,7 @@ export const ChatList: React.FC<Props> = React.memo(({
             </button>
             {showSearchBar || searchQuery ? <label className="tg-telegram-search"><Search className="w-5 h-5 shrink-0" /><input autoFocus type="search" aria-label="Search Telegram" placeholder="Search" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></label> : <h1>Webygram</h1>}
             {isLoadingDialogs && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-            {!showSearchBar && !searchQuery && <><button type="button" aria-label="Search Telegram" className="tg-icon-button" onClick={() => setShowSearchBar(true)}><Search /></button><button type="button" aria-label="Change appearance" className="tg-icon-button" onClick={onOpenModSettings}><Palette /></button></>}
+            {!showSearchBar && !searchQuery && <><button type="button" aria-label="Search Telegram" className="tg-icon-button" onClick={() => setShowSearchBar(true)}><Search /></button><button type="button" aria-label="More options" className="tg-icon-button" onClick={() => setShowHamburgerDrawer(true)}><MoreVertical /></button></>}
           </header>}
           {!telegramNavigation && <>
           {/* Optional Flow header */}
@@ -813,7 +813,7 @@ export const ChatList: React.FC<Props> = React.memo(({
                       : 'text-muted dark:text-muted hover:text-ink dark:hover:text-white'
                   }`}
                 >
-                  <span>{f.name === 'Chats' ? 'Personal' : f.name}</span>
+                  <span>{f.name === 'All' ? 'All Chats' : f.name}</span>
                   {stats.unread > 0 && (
                     <span
                       className={`px-1.5 py-0.2 rounded-full text-[10.5px] font-bold tabular-nums leading-4 ${
@@ -1049,7 +1049,7 @@ export const ChatList: React.FC<Props> = React.memo(({
       )}
 
       {isConnected && <div className="tg-new-message-fab absolute bottom-5 right-4 z-30">
-        <button type="button" aria-label="New message" title="New message" className="tg-compose-fab" onClick={() => { setNewMessageQuery(''); setDirectError(null); setShowNewMessageModal(true); }}><Edit2 /></button>
+        <button type="button" aria-label="New message" title="New message" className="tg-compose-fab" onClick={() => { setNewMessageQuery(''); setDirectError(null); setShowNewMessageModal(true); }}><MessageCircle className="tg-compose-symbol" /><Plus className="tg-compose-plus" /></button>
       </div>}
 
       {showHamburgerDrawer && telegramNavigation && <TelegramNavigationMenu

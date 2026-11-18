@@ -13,7 +13,7 @@ export function SelfProfileView(p: Props) {
   const user = p.session.user, title = profile?.title || [user.firstName, user.lastName].filter(Boolean).join(' '), phone = profile?.phone || user.phone || '';
   const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); p.onNotify('Copied'); } catch { p.onNotify('Could not copy. Check clipboard permission.'); } };
   const rows = [['Settings', Settings, p.onSettings], ['Privacy and Security', Shield, p.onPrivacy], ['Notifications', Bell, p.onNotifications], ['Data and Storage', Database, p.onData], ['Appearance', Palette, p.onAppearance]] as const;
-  return <section className="tg-next-page tg-self-profile" aria-label="Your profile"><div className="tg-profile-cover"><button type="button" aria-label="Back to chats" className="tg-icon-button" onClick={p.onBack}><ArrowLeft /></button></div>
+  return <section className="tg-next-page tg-self-profile" aria-label="Your profile"><div className="tg-profile-cover tg-profile-topbar"><button type="button" aria-label="Back to chats" className="tg-icon-button" onClick={p.onBack}><ArrowLeft /></button><button type="button" aria-label="Edit account" className="tg-icon-button" onClick={p.onEdit}><Edit2 /></button></div>
     <div className="tg-next-scroll tg-profile-body">
       <div className="tg-profile-avatar"><Avatar src={profile?.avatarUrl || user.avatarUrl} title={title} id={user.id} size="lg" /><button type="button" aria-label="Edit profile" className="tg-profile-edit" onClick={p.onEdit}><Edit2 /></button></div>
       <h1>{title}{profile?.isVerified && <BadgeCheck className="text-primary w-5 h-5" />}</h1><p className="text-muted">{phone ? '+' + phone.replace(/^\++/, '') : 'Your Telegram profile'}</p>

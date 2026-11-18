@@ -1,7 +1,6 @@
 import { modernTelegramColors } from '../themes/modernTelegram';
 import { ModSettings, ColorPalette, AccentColor } from '../types/modSettings';
-import { FLOW_PALETTES } from '../themes/flowPalettes';
-import { findFlowPalette, resolveFlowPalette, readableAccent, readableForeground, readableText, mixColor } from '../themes/themeTokens';
+import { readableAccent, readableForeground, readableText, mixColor } from '../themes/themeTokens';
 
 const STORAGE_KEY = 'tg_plus_mod_settings_v2';
 
@@ -27,95 +26,8 @@ export interface PaletteThemeTokens {
 }
 
 export const COLOR_PALETTES: PaletteThemeTokens[] = [
-  {
-    id: 'night-blue',
-    name: 'Original Telegram',
-    subtitle: 'Telegram dark surfaces and violet accents',
-    ...modernTelegramColors('dark'),
-  },
-  ...FLOW_PALETTES.map(palette => resolveFlowPalette(palette, 'dark')),
-  {
-    id: 'amoled-black',
-    name: 'AMOLED Onyx',
-    subtitle: 'Black OLED surfaces and Telegram accents',
-    ...modernTelegramColors('amoled'),
-  },
-  {
-    id: 'emerald-forest',
-    name: 'Emerald Matrix',
-    subtitle: 'Deep Pine & Jade Mint',
-    bgMain: '#06130E',
-    bgPanel: '#0C1F17',
-    bgElevated: '#132E23',
-    bubbleOut: '#14533E',
-    bubbleOutBorder: '#1E7558',
-    bubbleIn: '#0F261D',
-    bubbleInBorder: '#193B2E',
-    border: '#071711',
-    previewSwatches: ['#06130E', '#0C1F17', '#10B981'],
-  },
-  {
-    id: 'royal-amethyst',
-    name: 'Royal Amethyst',
-    subtitle: 'Deep Nebula & Velvet Violet',
-    bgMain: '#0F0A1C',
-    bgPanel: '#171029',
-    bgElevated: '#22183B',
-    bubbleOut: '#432371',
-    bubbleOutBorder: '#5D3499',
-    bubbleIn: '#1C1333',
-    bubbleInBorder: '#2B1E4D',
-    border: '#120C21',
-    previewSwatches: ['#0F0A1C', '#171029', '#8B5CF6'],
-  },
-  {
-    id: 'sunset-rose',
-    name: 'Crimson Velvet',
-    subtitle: 'Warm Wine & Rose Quartz',
-    bgMain: '#170910',
-    bgPanel: '#220E18',
-    bgElevated: '#311523',
-    bubbleOut: '#691E42',
-    bubbleOutBorder: '#8C2A59',
-    bubbleIn: '#28111D',
-    bubbleInBorder: '#3D1B2C',
-    border: '#190A11',
-    previewSwatches: ['#170910', '#220E18', '#F43F5E'],
-  },
-  {
-    id: 'cyber-gold',
-    name: 'Cyber Gold',
-    subtitle: 'Obsidian Bronze & Amber',
-    bgMain: '#120F08',
-    bgPanel: '#1C170D',
-    bgElevated: '#292214',
-    bubbleOut: '#574011',
-    bubbleOutBorder: '#785919',
-    bubbleIn: '#211B0F',
-    bubbleInBorder: '#362C19',
-    border: '#141109',
-    previewSwatches: ['#120F08', '#1C170D', '#F59E0B'],
-  },
-  {
-    id: 'oceanic-teal',
-    name: 'Oceanic Abyss',
-    subtitle: 'Deep Pacific & Cyan',
-    bgMain: '#06151C',
-    bgPanel: '#0C212B',
-    bgElevated: '#13303E',
-    bubbleOut: '#154D63',
-    bubbleOutBorder: '#1E6B88',
-    bubbleIn: '#0E2733',
-    bubbleInBorder: '#183B4D',
-    border: '#071820',
-    previewSwatches: ['#06151C', '#0C212B', '#06B6D4'],
-  },
-  {
-    id: 'daylight-classic',
-    name: 'Daylight Classic',
-    subtitle: 'Telegram white surfaces and blue accents',
-    ...modernTelegramColors('light'),
-  },
+  { id: 'night-blue', name: 'Telegram Dark', subtitle: 'Navy surfaces and blue accents', ...modernTelegramColors('dark') },
+  { id: 'daylight-classic', name: 'Telegram Light', subtitle: 'White surfaces and green messages', ...modernTelegramColors('light') },
 ];
 
 export const ACCENT_COLORS: Record<AccentColor, { name: string; hex: string; hover: string }> = {
@@ -173,15 +85,14 @@ class ModSettingsStore {
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = JSON.parse(raw);
       const settings = { ...DEFAULT_SETTINGS, ...parsed };
-      // Restore the requested Telegram appearance after the earlier Flow rollout.
-      // Only appearance changes; privacy, media and other mod preferences survive.
-      if (parsed.designVersion !== 3) {
-        Object.assign(settings, {
-          colorPalette: 'night-blue', accentColor: 'telegram-blue', themeMode: 'dark',
-          chatWallpaper: 'pattern-tg', bubbleStyle: 'telegram', navigationStyle: 'telegram',
-        });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, designVersion: 3 }));
-      }
+      // Migrate only appearance; keep existing privacy, notifications and media preferences.
+      Object.assign(settings, {
+        themeMode: parsed.themeMode === 'light' ? 'light' : 'dark',
+        colorPalette: parsed.themeMode === 'light' ? 'daylight-classic' : 'night-blue',
+        accentColor: 'telegram-blue', chatWallpaper: 'pattern-tg',
+        bubbleStyle: 'telegram', bubbleRadius: 'rounded', navigationStyle: 'telegram',
+      });
+      if (parsed.designVersion !== 4) localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, designVersion: 4 }));
       return settings;
     } catch {
       return { ...DEFAULT_SETTINGS };
@@ -190,7 +101,7 @@ class ModSettingsStore {
 
   private saveToStorage() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...this.settings, designVersion: 3 }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...this.settings, designVersion: 4 }));
     } catch {
       // Ignore quota errors
     }
@@ -204,9 +115,8 @@ class ModSettingsStore {
   public getActivePaletteTokens():PaletteThemeTokens {
     const key=this.settings.colorPalette+':'+this.settings.themeMode;
     if(this.paletteCache?.key===key)return this.paletteCache.tokens;
-    const flow=findFlowPalette(this.settings.colorPalette);
     const base=COLOR_PALETTES.find(p=>p.id===this.settings.colorPalette)||COLOR_PALETTES[0];
-    const tokens=flow ? resolveFlowPalette(flow,this.settings.themeMode) : ['night-blue','daylight-classic','amoled-black'].includes(this.settings.colorPalette) ? {...base,...modernTelegramColors(this.settings.themeMode)} : base;
+    const tokens={...base,...modernTelegramColors(this.settings.themeMode)};
     this.paletteCache={key,tokens};return tokens;
   }
 
@@ -222,25 +132,14 @@ class ModSettingsStore {
 
   public updateSetting<K extends keyof ModSettings>(key: K, value: ModSettings[K]) {
     this.settings = { ...this.settings, [key]: value };
-    if (key === 'colorPalette') {
-      if (value === 'night-blue') {
-        this.settings.accentColor = 'telegram-blue';
-        this.settings.chatWallpaper = 'pattern-tg';
-        this.settings.bubbleStyle = 'telegram';
-      }
-      const pal = COLOR_PALETTES.find((p) => p.id === value);
-      if (pal && !String(value).startsWith('flow-')) {
-        this.settings.themeMode = pal.isLight ? 'light' : pal.id === 'amoled-black' ? 'amoled' : 'dark';
-      }
-    } else if (key === 'themeMode' && !this.settings.colorPalette.startsWith('flow-')) {
-      if (value === 'light') {
-        this.settings.colorPalette = 'daylight-classic';
-      } else if (value === 'amoled') {
-        this.settings.colorPalette = 'amoled-black';
-      } else if (this.settings.colorPalette === 'daylight-classic') {
-        this.settings.colorPalette = 'night-blue';
-      }
-    }
+    if (key === 'colorPalette') this.settings.themeMode = value === 'daylight-classic' ? 'light' : 'dark';
+    if (this.settings.themeMode !== 'light') this.settings.themeMode = 'dark';
+    this.settings.colorPalette = this.settings.themeMode === 'light' ? 'daylight-classic' : 'night-blue';
+    this.settings.accentColor = 'telegram-blue';
+    this.settings.navigationStyle = 'telegram';
+    this.settings.bubbleStyle = 'telegram';
+    this.settings.bubbleRadius = 'rounded';
+    this.settings.chatWallpaper = 'pattern-tg';
     this.saveToStorage();
     this.applyDOMTheme();
     this.notify();
@@ -276,7 +175,7 @@ class ModSettingsStore {
     const root = document.documentElement;
     const pal = this.getActivePaletteTokens();
     const primary = this.getActiveAccentHex();
-    const onPrimary = this.settings.accentColor === 'theme' && pal.onPrimary ? pal.onPrimary : readableForeground(primary);
+    const onPrimary = readableForeground(primary);
     const surfaces=[pal.bgMain,pal.bgPanel,pal.bgElevated];
     const ink = readableText(pal.text || (pal.isLight ? '#202124' : '#F1F3F4'),surfaces);
     const muted = readableText(pal.muted || (pal.isLight ? '#595E65' : '#B3BAC3'),surfaces);
@@ -291,7 +190,7 @@ class ModSettingsStore {
     }
 
     root.setAttribute('data-palette', pal.id);
-    const interfaceStyle = pal.id.startsWith('flow-') ? 'flow' : 'telegram';
+    const interfaceStyle = 'telegram';
     root.setAttribute('data-interface', interfaceStyle);
     root.setAttribute('data-layout', interfaceStyle === 'telegram' ? 'telegram-next' : 'flow');
     root.setAttribute('data-navigation', this.settings.navigationStyle === 'auto' ? interfaceStyle : this.settings.navigationStyle);
@@ -312,12 +211,13 @@ class ModSettingsStore {
     root.style.setProperty('--tg-primary-text', readableText(primary, surfaces));
     root.style.setProperty('--tg-text', ink);
     for(const [name,surface] of [['in',pal.bubbleIn],['out',this.settings.bubbleStyle==='ios'?primary:pal.bubbleOut]] as const){
-      const text=readableText(ink,[surface]);root.style.setProperty('--tg-message-'+name+'-text',text);
-      root.style.setProperty('--tg-message-'+name+'-muted',readableText(muted,[surface]));
+      const text=readableText(name==='out' && !pal.isLight ? '#FFFFFF' : ink,[surface]);root.style.setProperty('--tg-message-'+name+'-text',text);
+      root.style.setProperty('--tg-message-'+name+'-muted',readableText(name==='out' && !pal.isLight ? '#E1EBFF' : muted,[surface]));
       root.style.setProperty('--tg-message-'+name+'-link',readableAccent(primary,surface,text));
     }
     ['#1389ff','#eea229','#0bbd76','#ff536b','#7f6cff','#16adca'].forEach((tone,index)=>root.style.setProperty('--tg-tone-'+index,readableAccent(tone,pal.bgPanel,ink)));
     root.style.setProperty('--tg-muted', muted);
+    root.style.setProperty('--tg-chat-wallpaper', pal.isLight ? 'linear-gradient(135deg,#D4DE93 0%,#83BC85 40%,#59A692 70%,#D7DCAA 100%)' : 'linear-gradient(155deg,#101B29,#0C1B23)');
     root.style.setProperty('--tg-error', pal.error || (pal.isLight ? '#B3261E' : '#FFB4AB'));
     root.style.setProperty('--tg-surface-low', mixColor(pal.bgMain, pal.bgPanel, .5));
     root.style.setProperty('--tg-hover', mixColor(ink, pal.bgPanel, .08));

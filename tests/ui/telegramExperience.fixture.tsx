@@ -22,6 +22,7 @@ if (new URLSearchParams(location.search).has('stress')) {
   messages.bob = Array.from({length: 200}, (_, index) => ({ ...base, chatId: 'bob', id: String(1000 + index), timestamp: Date.now() - (200 - index) * 60000, text: index % 7 === 0 ? 'Variable length message '.repeat(20) : 'Message ' + index, isOutgoing: index % 2 === 0, media: index % 25 === 0 ? { type: 'photo', url: '/api/tg/media/bob/' + index, thumbnailUrl: '/api/tg/media/bob/' + index + '?thumb=1', width: 320, height: index % 50 ? 180 : 400 } : undefined }));
   for(let index=0;index<3;index++) messages.bob.push({...base,chatId:'bob',id:String(1201+index),text:index===0?'Grouped album caption':'',groupedId:'album-42',media:{type:'photo',url:'/api/tg/media/bob/album'+index,width:300,height:300}});
   messages.bob.push({...base,chatId:'bob',id:'1204',text:'Latest group message',isOutgoing:true});
+  messages.bob.push({...base,chatId:'bob',id:'1205',text:'',poll:{id:'77',question:'Which release?',options:[{text:'Mobile',optionHex:'01',voters:3,chosen:false},{text:'Desktop',optionHex:'02',voters:1,chosen:false}],totalVoters:4}});
   messages.readonly=messages.bob.map((message:any)=>({...message,chatId:'readonly',isOutgoing:false}));
   chats.push({id:'colors',type:'group',title:'Palette controls',unreadCount:0,canPostMessages:true});
   messages.colors=[

@@ -229,6 +229,7 @@ export interface UserProfileInfo {
   isPremium?: boolean;
   isBlocked?: boolean;
   commonChatsCount?: number;
+  isContact?: boolean;
 }
 
 export interface TelegramChat {

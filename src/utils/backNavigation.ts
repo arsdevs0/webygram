@@ -14,10 +14,8 @@ export function createBackNavigation(port: BackPort) {
   let releasing = false;
   let disposed = false;
   let rootPrompt: (() => void) | undefined;
-  let exitPressedAt: number | undefined;
-  let exiting = false;
   const sync = () => {
-    if (disposed || releasing || exiting) return;
+    if (disposed || releasing) return;
     const needed = layers.length > 0 || Boolean(fallback) || Boolean(rootPrompt);
     if (needed && !guarded) {
       port.history.pushState({ ...port.history.state, [marker]: true }, '');
@@ -34,12 +32,10 @@ export function createBackNavigation(port: BackPort) {
     guarded = false;
     if (releasing) { releasing = false; sync(); return; }
     if (wasGuarded) {
-      if (layers.length || fallback) { exitPressedAt = undefined; dismiss(); }
-      else if (rootPrompt) {
-        const now = port.now?.() ?? Date.now();
-        if (exitPressedAt !== undefined && now - exitPressedAt <= 700) { exiting = true; port.history.back(); return; }
-        exitPressedAt = now; rootPrompt();
-      }
+      // Rearm synchronously: consecutive Back events must never see an unguarded root.
+      if (rootPrompt) sync();
+      if (layers.length || fallback) dismiss();
+      else rootPrompt?.();
       port.defer(sync);
     }
   });

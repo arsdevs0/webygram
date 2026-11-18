@@ -1,0 +1,10 @@
+import React,{useEffect,useState} from 'react';
+import {Avatar} from '../common/Avatar';
+import {telegramService} from '../../services/telegramService';
+import type {TelegramChat} from '../../types/telegram';
+export function ProfileGroups({userId,onOpen}:{userId:string;onOpen:(id:string)=>void}){
+ const [groups,setGroups]=useState<TelegramChat[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(false),[more,setMore]=useState(false),[offset,setOffset]=useState('0'),[revision,setRevision]=useState(0);
+ useEffect(()=>{const abort=new AbortController();setLoading(true);setError('');telegramService.getUserCommonGroups(userId,offset,abort.signal).then(data=>{if(!abort.signal.aborted){setGroups(prev=>offset==='0'?data.chats:[...new Map([...prev,...data.chats].map(chat=>[chat.id,chat])).values()]);setMore(data.hasMore);setNextOffset(data.nextOffset);}}).catch(err=>{if(!abort.signal.aborted)setError(err.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[userId,offset,revision]);
+ const [nextOffset,setNextOffset]=useState('0');
+ return <section className="tg-next-card" aria-label="Shared groups">{groups.map(group=><button type="button" key={group.id} className="tg-contact-row" onClick={()=>onOpen(group.username?'@'+group.username:group.id)}><Avatar src={group.avatarUrl} title={group.title} id={group.id} size="md"/><span><strong>{group.title}</strong><span className="block text-muted text-sm">{group.memberCount?group.memberCount.toLocaleString()+' members':'Group'}</span></span></button>)}{error&&<div role="alert" className="tg-next-empty">{error}<button className="tg-next-text-button" onClick={()=>setRevision(v=>v+1)}>Retry</button></div>}{loading&&<p role="status" className="tg-shared-status">Loading groups…</p>}{!loading&&!error&&!groups.length&&<p className="tg-shared-status">No groups in common.</p>}{more&&<button disabled={loading} className="tg-shared-more" onClick={()=>setOffset(nextOffset)}>Load more</button>}</section>;
+}

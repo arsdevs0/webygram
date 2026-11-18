@@ -148,20 +148,20 @@ export const ChatHeader: React.FC<Props> = ({
 
   return (
     <div className="tg-chat-header border-b border-outline dark:border-outline bg-surface dark:bg-surface relative z-20 text-ink dark:text-ink shrink-0">
-      <div className="flex items-center justify-between px-3 sm:px-5 py-2.5 gap-2">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <div className="tg-chat-topline">
+        <div className="tg-chat-leading">
           <button
             type="button"
             onClick={onBackMobile}
-            className="p-1.5 -ml-1 text-muted dark:text-muted hover:text-ink dark:hover:text-white rounded-lg cursor-pointer shrink-0 lg:hidden"
+            className="tg-chat-back lg:hidden"
             aria-label="Back to chats"
             title="Back"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
 
+          <button type="button" onClick={handleHeaderProfileClick} className="tg-chat-identity" aria-label={'View profile of ' + displayTitle}>
           <div
-            onClick={handleHeaderProfileClick}
             className="relative cursor-pointer flex items-center justify-center shrink-0"
           >
             <Avatar
@@ -175,7 +175,7 @@ export const ChatHeader: React.FC<Props> = ({
             />
           </div>
 
-          <div onClick={handleHeaderProfileClick} className="cursor-pointer overflow-hidden min-w-0">
+          <div className="text-left overflow-hidden min-w-0">
             <div className="flex items-center gap-1.5">
               <h2 className="text-sm font-semibold truncate">{displayTitle}</h2>
               {chat.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
@@ -195,9 +195,10 @@ export const ChatHeader: React.FC<Props> = ({
               {getSubtitle()}
             </p>
           </div>
+          </button>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="tg-chat-actions">
           {chat.unreadCount > 0 && ayuSettings.ghostModeActive && !ayuSettings.sendReadReceipts && (
             <button
               type="button"
@@ -232,7 +233,7 @@ export const ChatHeader: React.FC<Props> = ({
                   setIsSearchOpen(true);
                 }
               }}
-              className={`p-2 rounded-xl cursor-pointer transition-colors ${
+              className={`hidden sm:flex p-2 rounded-xl cursor-pointer transition-colors ${
                 isSearchOpen || searchQuery
                   ? 'text-primary bg-primary/15'
                   : 'text-muted dark:text-muted hover:text-primary hover:bg-hover dark:hover:bg-hover'
@@ -290,6 +291,7 @@ export const ChatHeader: React.FC<Props> = ({
       {showActions && <>
         <button aria-label="Close chat options" className="fixed inset-0 z-20 cursor-default" onClick={() => setShowActions(false)} />
         <div role="menu" aria-label="Chat options" className="absolute right-2 top-14 z-30 w-60 rounded-2xl border border-outline dark:border-outline bg-surface dark:bg-elevated shadow-xl p-1.5 text-sm">
+          {onSearchChange && <button role="menuitem" onClick={() => { setShowActions(false); setIsSearchOpen(true); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover">Search messages</button>}
           <button role="menuitem" onClick={() => { setShowActions(false); onToggleInfoPanel(); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Chat info</button>
           {onOpenScheduled && <button role="menuitem" onClick={() => { setShowActions(false); onOpenScheduled(); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Scheduled messages</button>}
           <button role="menuitem" onClick={() => { setShowActions(false); (onStartVideoCall || onStartVoiceCall || onOpenVoiceStudio)(); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Video call</button>

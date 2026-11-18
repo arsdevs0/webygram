@@ -138,7 +138,7 @@ export const ModSettingsView: React.FC<Props> = ({ isOpen, onClose, onNotify }) 
             <div>
               <h2 className="text-sm font-bold">Appearance &amp; Mods</h2>
               <p className="text-[11px] text-muted dark:text-muted">
-                Colors, wallpapers and extra features
+                Light, dark and extra features
               </p>
             </div>
           </div>
@@ -169,7 +169,7 @@ export const ModSettingsView: React.FC<Props> = ({ isOpen, onClose, onNotify }) 
         </div>
 
         <div className={`tg-theme-preview px-4 py-3 ${getPreviewWallpaperClass()}`} aria-label="Theme preview">
-          <div className="tg-bubble-in rounded-2xl rounded-bl-sm px-3 py-2 w-fit max-w-[85%] text-sm text-ink">A little more you.<span className="text-[11px] text-muted ml-3">9:41</span></div>
+          <div className="tg-bubble-in rounded-2xl rounded-bl-sm px-3 py-2 w-fit max-w-[85%] text-sm text-ink">Telegram incoming message<span className="text-[11px] text-muted ml-3">9:41</span></div>
           <div className="tg-bubble-out rounded-2xl rounded-br-sm px-3 py-2 w-fit max-w-[85%] text-sm text-ink ml-auto mt-2 flex items-center gap-3">{activePalette.name}<CheckCheck className="w-4 h-4" /></div>
         </div>
 
@@ -203,199 +203,17 @@ export const ModSettingsView: React.FC<Props> = ({ isOpen, onClose, onNotify }) 
 
         {/* Body */}
         <div className="p-5 overflow-y-auto space-y-6 flex-1">
-          {activeTab === 'palettes' && (
-            <>
-              <div className="space-y-3">
-                <div className="tg-segmented" role="group" aria-label="Theme mode">
-                  {(['light', 'dark', 'amoled'] as const).map(mode => <button key={mode} type="button" aria-pressed={settings.themeMode === mode} onClick={() => modSettingsStore.updateSetting('themeMode', mode)}>{mode === 'amoled' ? 'OLED' : mode === 'light' ? 'Light' : 'Dark'}</button>)}
-                </div>
-                <input aria-label="Find a theme" placeholder="Find a theme…" value={themeQuery} onChange={e => setThemeQuery(e.target.value)} className="w-full bg-elevated border border-outline rounded-full px-4 py-2.5 text-sm" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted dark:text-muted flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-primary" />
-                    <span>Themes · {COLOR_PALETTES.length}</span>
-                  </h3>
-                  <span className="text-[11px] font-semibold text-primary">
-                    Active: {activePalette.name}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {COLOR_PALETTES.filter(p => `${p.name} ${p.subtitle}`.toLowerCase().includes(themeQuery.toLowerCase())).map((pal) => {
-                    const isSelected = settings.colorPalette === pal.id;
-                    return (
-                      <button
-                        key={pal.id}
-                        type="button"
-                        onClick={() => modSettingsStore.updateSetting('colorPalette', pal.id)}
-                        aria-pressed={isSelected}
-                        className={`group relative p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'border-outline bg-primary-container'
-                            : 'border-outline dark:border-outline hover:border-primary/50 bg-surface-low/60 dark:bg-elevated/60'
-                        }`}
-                      >
-                        {/* Swatch Preview Strip */}
-                        <div className="h-11 rounded-lg overflow-hidden border border-black/15 dark:border-outline flex mb-2 relative">
-                          <div className="flex-1 h-full" style={{ backgroundColor: pal.previewSwatches[0] }} />
-                          <div className="flex-1 h-full" style={{ backgroundColor: pal.previewSwatches[1] }} />
-                          <div className="flex-1 h-full" style={{ backgroundColor: pal.previewSwatches[2] }} />
-                          {isSelected && (
-                            <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
-                              <div className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shadow-md">
-                                <Check className="w-3 h-3" />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-xs font-bold truncate">{pal.name}</div>
-                        <div className="text-[10px] text-muted dark:text-muted truncate">
-                          {pal.subtitle}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 7 Accent Colors */}
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted dark:text-muted mb-3">
-                  Accent &amp; Highlight Color
-                </h3>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  {(Object.keys(ACCENT_COLORS) as AccentColor[]).map((key) => {
-                    const item = ACCENT_COLORS[key];
-                    const isSel = settings.accentColor === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => modSettingsStore.updateSetting('accentColor', key)}
-                        className={`px-3 py-2 rounded-xl border flex items-center gap-2 text-xs font-semibold transition-all cursor-pointer ${
-                          isSel
-                            ? 'border-primary bg-primary/10 text-ink dark:text-ink shadow-xs'
-                            : 'border-outline dark:border-outline bg-surface-low dark:bg-elevated/60 text-muted dark:text-muted'
-                        }`}
-                      >
-                        <span
-                          className="w-4 h-4 rounded-full flex items-center justify-center text-white shrink-0"
-                          style={{ backgroundColor: key === 'theme' ? activePalette.primary || activeAccentHex : item.hex }}
-                        >
-                          {isSel && <Check className="w-2.5 h-2.5" />}
-                        </span>
-                        <span>{item.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
-          )}
+          {activeTab === 'palettes' && <div className="space-y-4">
+            <h3 className="font-semibold">Telegram appearance</h3>
+            <div className="tg-segmented tg-theme-modes" role="group" aria-label="Theme mode">
+              {(['light', 'dark'] as const).map(mode => <button key={mode} type="button" aria-pressed={settings.themeMode === mode} onClick={() => modSettingsStore.updateSetting('themeMode', mode)}>{mode === 'light' ? 'Light' : 'Dark'}</button>)}
+            </div>
+            <p className="text-sm text-muted">The same Telegram layout in both modes.</p>
+          </div>}
 
           {activeTab === 'chat' && (
             <>
-              <section className="space-y-3">
-                <h3 className="text-sm font-medium">Navigation style</h3>
-                <p className="text-xs text-muted">Choose your navigation independently of your colours. Every section stays available.</p>
-                <div className="tg-segmented" role="group" aria-label="Navigation style">
-                  {([{ id: 'auto', name: 'Follow theme' }, { id: 'telegram', name: 'Telegram' }, { id: 'flow', name: 'Flow pills' }] as const).map(style => <button key={style.id} type="button" aria-pressed={settings.navigationStyle === style.id} onClick={() => modSettingsStore.updateSetting('navigationStyle', style.id)}>{style.name}</button>)}
-                </div>
-              </section>
-              {/* 6 Chat Wallpapers */}
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted dark:text-muted mb-3">
-                  Chat Background Wallpaper
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                  {WALLPAPER_OPTIONS.map((wp) => {
-                    const isSel = settings.chatWallpaper === wp.id;
-                    return (
-                      <button
-                        key={wp.id}
-                        type="button"
-                        onClick={() => modSettingsStore.updateSetting('chatWallpaper', wp.id)}
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          isSel
-                            ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
-                            : 'border-outline dark:border-outline bg-surface-low dark:bg-elevated/50'
-                        }`}
-                      >
-                        <div
-                          className={`h-12 rounded-lg mb-2 border border-white/10 ${wp.previewClass} flex items-center justify-center`}
-                        >
-                          {isSel && (
-                            <span className="px-2 py-0.5 rounded-full bg-primary text-white text-[10px] font-bold">
-                              Active
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs font-bold truncate">{wp.label}</div>
-                        <div className="text-[10px] text-muted dark:text-muted truncate">
-                          {wp.desc}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Message Bubble Style & Corner Radius */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-muted dark:text-muted block mb-2">
-                    Message Bubble Style
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(
-                      [
-                        { id: 'telegram', label: 'Telegram Classic' },
-                        { id: 'ios', label: 'iOS Accent' },
-                        { id: 'glass', label: 'Translucent Glass' },
-                        { id: 'minimal', label: 'Minimal Flat' },
-                      ] as Array<{ id: BubbleStyle; label: string }>
-                    ).map((st) => (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => modSettingsStore.updateSetting('bubbleStyle', st.id)}
-                        className={`py-2 px-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                          settings.bubbleStyle === st.id
-                            ? 'bg-primary text-white border-primary'
-                            : 'bg-surface-low dark:bg-elevated border-outline dark:border-outline text-muted dark:text-muted'
-                        }`}
-                      >
-                        {st.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-muted dark:text-muted block mb-2">
-                    Bubble Corner Radius
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(['subtle', 'rounded', 'extra'] as BubbleRadius[]).map((rad) => (
-                      <button
-                        key={rad}
-                        type="button"
-                        onClick={() => modSettingsStore.updateSetting('bubbleRadius', rad)}
-                        className={`py-2 px-2.5 rounded-xl text-xs font-semibold capitalize border transition-all cursor-pointer ${
-                          settings.bubbleRadius === rad
-                            ? 'bg-primary text-white border-primary'
-                            : 'bg-surface-low dark:bg-elevated border-outline dark:border-outline text-muted dark:text-muted'
-                        }`}
-                      >
-                        {rad}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
+              {/* One Telegram navigation, wallpaper and bubble design in both modes. */}
               {/* Font Size & Sticker Size */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

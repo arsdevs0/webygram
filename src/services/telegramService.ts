@@ -147,7 +147,7 @@ export class TelegramService {
   private sharedMediaErrors: Record<string, string> = {};
   private sharedMediaByChat: Record<
     string,
-    { media?: TelegramMessage[]; files?: TelegramMessage[]; voice?: TelegramMessage[]; links?: TelegramMessage[]; music?: TelegramMessage[] }
+    { media?: TelegramMessage[]; files?: TelegramMessage[]; voice?: TelegramMessage[]; links?: TelegramMessage[]; music?: TelegramMessage[]; gifs?: TelegramMessage[]; polls?: TelegramMessage[] }
   > = {};
   private isLoadingSharedMediaByChat: Record<string, boolean> = {};
   private hasMoreSharedMediaByChat: Record<string, boolean> = {};
@@ -987,15 +987,15 @@ export class TelegramService {
 
   public getSharedMediaError(chatId: string, filter: string): string | undefined { return this.sharedMediaErrors[`${chatId}:${filter}`]; }
 
-  public getSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music'): TelegramMessage[] | undefined {
+  public getSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music' | 'gifs' | 'polls'): TelegramMessage[] | undefined {
     return this.sharedMediaByChat[chatId]?.[filter];
   }
 
-  public isLoadingSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music'): boolean {
+  public isLoadingSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music' | 'gifs' | 'polls'): boolean {
     return Boolean(this.isLoadingSharedMediaByChat[`${chatId}:${filter}`]);
   }
 
-  public hasMoreSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music'): boolean {
+  public hasMoreSharedMedia(chatId: string, filter: 'media' | 'files' | 'voice' | 'links' | 'music' | 'gifs' | 'polls'): boolean {
     return Boolean(this.hasMoreSharedMediaByChat[`${chatId}:${filter}`]);
   }
 
@@ -1428,7 +1428,7 @@ export class TelegramService {
 
   public async loadChatSharedMedia(
     chatId: string,
-    filter: 'media' | 'files' | 'voice' | 'links' | 'music',
+    filter: 'media' | 'files' | 'voice' | 'links' | 'music' | 'gifs' | 'polls',
     append: boolean = false,
     autoChainRemaining: number = 0
   ): Promise<TelegramMessage[]> {
@@ -1459,7 +1459,7 @@ export class TelegramService {
         ...(this.sharedMediaByChat[chatId] || {}),
         [filter]: merged,
       };
-      const hasMore = Boolean(data.hasMore && incoming.length > 0);
+      const hasMore = Boolean(data.hasMore && Number(data.nextOffsetId) > 0 && (!append || Number(data.nextOffsetId) < offsetId));
       this.hasMoreSharedMediaByChat[key] = hasMore;
       if (data.nextOffsetId) {
         this.nextOffsetSharedMediaByChat[key] = Number(data.nextOffsetId);
@@ -2883,6 +2883,17 @@ export class TelegramService {
     if (!res.ok) throw new Error(data.error || 'Could not load contacts.');
     if (!Array.isArray(data.contacts)) throw new Error('Contact list could not be read. Please retry.');
     return data.contacts;
+  }
+
+  public async getUserCommonGroups(userId: string, offset = '0', signal?: AbortSignal): Promise<{ chats: TelegramChat[]; hasMore: boolean; nextOffset: string }> {
+    const res = await fetch('/api/tg/users/' + encodeURIComponent(userId) + '/groups?offset=' + encodeURIComponent(offset), { signal });
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data.chats)) throw new Error(data.error || 'Could not load shared groups.');
+    return data;
+  }
+  public async addProfileContact(profile: UserProfileInfo): Promise<void> {
+    const res = await fetch('/api/tg/users/' + encodeURIComponent(profile.id) + '/contact', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({firstName:profile.firstName || profile.title, lastName:profile.lastName || '', phone:profile.phone || ''}) });
+    const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Could not add contact.');
   }
 
   public async getUserProfile(
