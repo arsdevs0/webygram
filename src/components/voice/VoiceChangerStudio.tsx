@@ -21,6 +21,7 @@ import {
 import { voiceChanger, BUILTIN_VOICE_PRESETS } from '../../services/voiceChangerEngine';
 import { VoiceChangerState } from '../../types/voiceChanger';
 import { AudioWaveformVisualizer } from './AudioWaveformVisualizer';
+import { VoiceEngineStatus } from './VoiceEngineStatus';
 import { modSettingsStore } from '../../services/modSettingsStore';
 
 interface Props {
@@ -331,7 +332,7 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="flex items-center justify-between mb-2 gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold">Live Input Monitor</span>
-                {state.detectedInputHz ? (
+                {state.activeEngine !== 'neural' && state.detectedInputHz ? (
                   <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10.5px] font-mono font-semibold tabular-nums">
                     {state.detectedInputHz} Hz → {state.outputPitchHz} Hz
                   </span>
@@ -358,6 +359,7 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
             )}
           </div>
 
+          <VoiceEngineStatus state={state} />
           {activeTab === 'dsp' && (
             <>
               <div>
@@ -389,7 +391,7 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
                             {getPresetIcon(preset.icon)}
                           </div>
                           <span className="text-[10px] font-mono text-muted dark:text-muted tabular-nums">
-                            {preset.pitchShift > 0 ? `+${preset.pitchShift}` : preset.pitchShift} st
+                            {preset.id === 'ai_female' ? 'AI · Local' : `${preset.pitchShift > 0 ? '+' : ''}${preset.pitchShift} st`}
                           </span>
                         </div>
                         <div className="font-semibold text-xs">{preset.name}</div>
@@ -402,7 +404,7 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-surface-low dark:bg-canvas border border-outline dark:border-outline space-y-4">
+              {state.selectedPresetId !== 'ai_female' && <div className="p-4 rounded-xl bg-surface-low dark:bg-canvas border border-outline dark:border-outline space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-outline dark:border-outline">
                   <h3 className="text-xs font-semibold">Fine-Tune Parameters</h3>
                   <button
@@ -543,6 +545,7 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
                 </div>
               </div>
 
+              }
               <div className="p-4 rounded-xl bg-surface-low dark:bg-canvas border border-outline dark:border-outline flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
                   <h4 className="text-xs font-semibold">Audition Sample</h4>
@@ -662,9 +665,9 @@ export const VoiceChangerStudio: React.FC<Props> = ({ isOpen, onClose }) => {
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-3 border-t border-outline dark:border-outline bg-surface-low dark:bg-canvas text-xs">
           <div className="text-muted dark:text-muted">
-            Active preset:{' '}
+            Voice output:{' '}
             <span className="font-semibold text-ink dark:text-ink">
-              {BUILTIN_VOICE_PRESETS[state.selectedPresetId as keyof typeof BUILTIN_VOICE_PRESETS]?.name || 'Custom'}
+              {!state.enabled ? 'Original microphone' : state.selectedPresetId === 'ai_female' && state.activeEngine !== 'neural' ? (state.activeEngine === 'dsp' ? 'Woman · lightweight effects' : 'Original microphone · AI preparing') : BUILTIN_VOICE_PRESETS[state.selectedPresetId as keyof typeof BUILTIN_VOICE_PRESETS]?.name || 'Custom'}
             </span>
           </div>
           <button

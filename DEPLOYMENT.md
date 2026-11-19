@@ -14,7 +14,7 @@ Environment variables normally optional hain. Apni Telegram app credentials use 
 - App ka ek tab open, awake aur Telegram se connected ho toh local background features run kar sakte hain. Tab band, device sleep ya browser suspension par woh rukenge.
 - Login/vault isi browser ki site storage mein save hote hain. Site data clear karne se local login/vault remove honge. Telegram ke cloud chats apni jagah rahenge.
 - Private Telegram calls mein native encrypted signaling + WebRTC audio aur local live voice effects integrated hain. Group calls supported nahi hain.
-- HTTPS aur mic permission chahiye; video ke liye camera permission. Browser/device sleep par media suspend ho sakti hai. Effects local DSP hain; har mobile par exact human AI conversion ki guarantee nahi hai.
+- HTTPS aur mic permission chahiye; video ke liye camera permission. Browser/device sleep par media suspend ho sakti hai. AI Woman preset local LLVC neural conversion karta hai; about 26 MB optional model/runtime download aur realtime speed check hota hai. Slow device par clearly-labelled lightweight effects use hote hain. Har mobile par indistinguishable human voice ki guarantee nahi hai.
 - Signed-in Telegram actions still need a live account check; build/tests alone do not verify every Telegram feature.
 - `.env`, `.tgplus*`, `.local`, `node_modules`, `build` aur `dist` upload nahi karne. Export inhe exclude karta hai.
 

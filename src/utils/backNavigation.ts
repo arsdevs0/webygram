@@ -13,7 +13,9 @@ export function createBackNavigation(port: BackPort) {
   let guarded = Boolean(port.history.state?.[marker]);
   let releasing = false;
   let disposed = false;
-  let rootPrompt: (() => void) | undefined;
+  let rootPrompt: ((remaining?: number) => void) | undefined;
+  let exitTaps = 0, firstExitAt = 0, lastExitAt = 0;
+  let rapidExitTaps = 0;
   const sync = () => {
     if (disposed || releasing) return;
     const needed = layers.length > 0 || Boolean(fallback) || Boolean(rootPrompt);
@@ -33,9 +35,15 @@ export function createBackNavigation(port: BackPort) {
     if (releasing) { releasing = false; sync(); return; }
     if (wasGuarded) {
       // Rearm synchronously: consecutive Back events must never see an unguarded root.
-      if (rootPrompt) sync();
-      if (layers.length || fallback) dismiss();
-      else rootPrompt?.();
+      if (layers.length || fallback) { exitTaps = 0; if(rootPrompt)sync(); dismiss(); }
+      else if (rootPrompt) {
+        const now = port.now?.() ?? Date.now();
+        if (!exitTaps || now-lastExitAt > 500 || now-firstExitAt > 1500) { exitTaps=0; firstExitAt=now; }
+        lastExitAt=now; exitTaps++;
+        if (rapidExitTaps && exitTaps >= rapidExitTaps) { disposed=true; unkey(); unpop(); port.history.back(); return; }
+        sync();
+        rootPrompt(rapidExitTaps ? rapidExitTaps-exitTaps : undefined);
+      }
       port.defer(sync);
     }
   });
@@ -50,7 +58,7 @@ export function createBackNavigation(port: BackPort) {
       const token = Symbol('back-layer'); layers.push({ token, close }); sync();
       return () => { const index = layers.findIndex(layer => layer.token === token); if (index >= 0) layers.splice(index, 1); sync(); };
     },
-    setExitProtection(prompt?: () => void) { rootPrompt = prompt; sync(); },
+    setExitProtection(prompt?: (remaining?: number) => void, options?: { rapidExitTaps?: number }) { rootPrompt = prompt; rapidExitTaps=options?.rapidExitTaps || 0; exitTaps=0; sync(); },
     setFallback(close?: () => void) { fallback = close; sync(); },
     dispose() { disposed = true; unpop(); unkey(); layers.length = 0; fallback = undefined; },
   };

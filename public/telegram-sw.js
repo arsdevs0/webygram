@@ -4,6 +4,11 @@ self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+  if (url.origin === self.location.origin && event.request.method === 'GET' && !url.pathname.startsWith('/api/')) {
+    if (event.request.mode==='navigate')event.respondWith((async()=>{try{const response=await fetch(event.request);if(response.ok){const cache=await caches.open('webygram-shell-v1');await cache.put('/',response.clone());}return response;}catch{return (await caches.match('/')) || new Response('Webygram is offline. Reconnect to use Telegram.',{status:503,headers:{'Content-Type':'text/plain'}});}})());
+    else if (/^\/(assets\/|icons\/|voice\/ort\/|voice\/neural-bridge\.worklet\.js|voice\/llvc-v1\.json|webygram-logo\.svg|telegram-doodles\.svg|manifest\.webmanifest)/.test(url.pathname))event.respondWith((async()=>{const cached=await caches.match(event.request);if(cached)return cached;const response=await fetch(event.request);if(response.ok){const cache=await caches.open('webygram-shell-v1');await cache.put(event.request,response.clone());}return response;})());
+    return;
+  }
   if (url.origin !== self.location.origin || !url.pathname.startsWith('/api/') || !['GET', 'HEAD'].includes(event.request.method)) return;
   event.respondWith((async () => {
     let client = event.clientId ? await self.clients.get(event.clientId) : undefined;

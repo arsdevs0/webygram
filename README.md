@@ -37,7 +37,11 @@ The new Telegram-inspired light/dark design is the default. Existing mod prefere
 
 Native **private Telegram calls** use Telegram's DH key exchange, verified fingerprints, encrypted signaling and WebRTC media. Voice effects process the microphone on the user's device before sending it to the other caller. Presets can be changed during a call or recording. Group-call transport remains unsupported.
 
-Local effects combine pitch, independent formant shaping, speech calibration, consonant preservation and dynamics. They do not install a neural voice model or guarantee an indistinguishable human voice on every mobile. RVC/Seed-VC GitHub options were reviewed; realtime local neural conversion depends on device/model support and cannot be promised across all phones. See [w-okada](https://github.com/w-okada/voice-changer), [Seed-VC](https://github.com/Plachtaa/seed-vc), [browser RVC runtime](https://github.com/moyue23/rvc-web-runtime) and [RVC WebGPU](https://github.com/ouor/rvc-webgpu).
+The **AI Woman** preset uses [LLVC](https://github.com/KoeAI/LLVC) neural voice conversion locally, with one trained feminine target voice. Its optimized FP32 ONNX model preserves the network weights and avoids expensive context scatter writes. Selecting this optional preset downloads about 26 MB of model/runtime assets; normal startup and lightweight presets do not load them. Model caching is optional browser storage. No audio is uploaded to an AI service.
+
+Inference runs in a dedicated Worker, with a single WASM thread that does not need SharedArrayBuffer or WebGPU. A measured device speed check must pass before AI activation. A bounded two-chunk playout buffer absorbs jitter; if inference stalls, the same call/recording output switches to lightweight effects and displays that fallback. The worker is released when AI is disabled or another preset is chosen. This does not promise realtime AI performance on every phone or a voice indistinguishable from a person.
+
+Other presets use lightweight pitch, independent formant shaping, speech calibration, consonant preservation and dynamics. Fine-tuning switches from the fixed neural target to the custom lightweight effects preset. The studio provides a local audition recording so users can hear the actual result.
 
 Use HTTPS and allow the microphone; camera permission is required for video. Keep the browser awake. Mobile browsers can suspend audio in the background or when the screen locks. Speaker controls playback; browser support determines physical earpiece/output routing. Voice notes are encoded to OGG/Opus locally; unsupported conversion falls back to an audio attachment using its actual format. Failed sends retain the recording for playback, Retry or Discard.
 
@@ -84,7 +88,7 @@ Images and avatar fetches wait until near the viewport; retries preserve embedde
 
 Active group/channel voice chats show a live or scheduled banner and participant info, refreshed while the app is visible. Joining group calls still requires native Telegram; this banner does not implement the group-call transport.
 
-Local voice processing now locks bins to actual spectral peaks, crossfades consonants in the complex spectrum and uses gentler EQ. Unvoiced audio is regression-tested for waveform preservation. GitHub realtime AI projects such as [w-okada](https://github.com/w-okada/voice-changer/blob/master/README_en.md) use a separate conversion server/high-performance runtime; that is not bundled into this mobile-local build.
+Lightweight voice processing locks bins to actual spectral peaks, crossfades consonants in the complex spectrum and uses gentler EQ. Unvoiced audio is regression-tested for waveform preservation. The optional LLVC preset adds actual local neural conversion with device-speed gating and worker-based buffering.
 
 The stress test covers long lists/histories, touch scrolling, group/channel arrows, album forwarding, shared-media playback/opening, gallery navigation, both supported Telegram modes, saved alert controls and repeated Back protection. It uses simulated Telegram RPCs and actual browser rendering, media decode and WebRTC; device/account checks remain separate.
 
@@ -93,3 +97,5 @@ The stress test covers long lists/histories, touch scrolling, group/channel arro
 Profiles use centered photos, rounded actions, segmented shared-history tabs and a four-column media grid. Shared Groups and Add Contact use authenticated Telegram RPCs; Polls open the original chat message and GIFs have their own tab. The profile options menu closes before the underlying profile on Back.
 
 Run `node scripts/test-telegram-reference.mjs <path-to-playwright/index.mjs>` to capture and check the light/dark mobile reference screens, subtle glass, shared-group pagination, contact actions, polls and GIFs. These use simulated Telegram responses; live device/account verification remains separate.
+
+Run `node scripts/test-neural-voice.mjs` and `node scripts/test-recording-receipts.mjs` with the same `PLAYWRIGHT_MODULE` for neural output, local recordings, download caching, mobile layout, worker-stall fallback and timed-media receipt checks. These use simulated Telegram RPCs; they do not establish real account delivery or voice naturalness on a physical phone.

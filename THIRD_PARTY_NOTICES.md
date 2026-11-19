@@ -19,3 +19,14 @@ The full license and source attribution are in `src/vendor/telegram-calls`.
 Local changes use WebCrypto, app-owned processed microphone clones, portable
 encoding, stable shared audio negotiation and speaker control. Distributions
 must retain these sources and license notices under the upstream GPL terms.
+
+Local neural conversion uses the LLVC model and streaming network from
+[KoeAI/LLVC](https://github.com/KoeAI/LLVC), code commit
+`1627c5d358cf9bb2b92b0ccc513d8b36807c923d` (MIT, copyright 2023 Koe AI).
+The model checkpoint is from [KoeAI/llvc](https://huggingface.co/KoeAI/llvc),
+revision `ebfe8c0fdeb974a7eeb463b3abbc8ce42a0e3851` (MIT).
+The exported ONNX graph preserves the trained weights; context writes were
+replaced with concatenation to reduce browser work. Reproduction scripts are
+in `scripts/voice-model`; the full license is in `licenses/LLVC-MIT.txt`.
+ONNX Runtime Web 1.23.2 is used under the MIT license from Microsoft.
+Its license is retained in `licenses/ONNX-Runtime-MIT.txt`.

@@ -1,0 +1,1 @@
+export function outboxReadReached(message:{id?:string;isOutgoing?:boolean;isPending?:boolean},maxId:number) {const id=Number(message.id);return Boolean(message.isOutgoing && !message.isPending && Number.isSafeInteger(id) && id>0 && maxId>=id);}

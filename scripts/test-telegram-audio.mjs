@@ -70,6 +70,15 @@ a=await context.newPage();b=await context.newPage();for(const page of [a,b]){pag
  await a.evaluate(async()=>{const {voiceChanger}=await import('/src/services/voiceChangerEngine.ts');voiceChanger.setPreset('natural_male');});
  await a.waitForTimeout(900);const male=await sample(b);assert.ok(male.peak<wet.peak-20,JSON.stringify({male,wet}));
  assert.equal(await a.evaluate(()=>window.__call.getStreams().ownAudio.getAudioTracks()[0].id),senderId,'Changing preset keeps same live RTP track');
+ await a.evaluate(async()=>{const {voiceChanger}=await import('/src/services/voiceChangerEngine.ts');window.__voice=voiceChanger;voiceChanger.setPreset('ai_female');await voiceChanger.setEnabled(true);});
+ await a.waitForFunction(()=>['active','slow','error'].includes(window.__voice.getState().neuralStatus),null,{timeout:90000});
+ const neuralState=await a.evaluate(async()=>{const {voiceChanger}=await import('/src/services/voiceChangerEngine.ts');return voiceChanger.getState();});
+ assert.equal(neuralState.activeEngine,'neural',JSON.stringify(neuralState));
+ assert.ok((await sample(b)).rms>.003,'Remote neural microphone must be audible');
+ assert.equal(await a.evaluate(()=>window.__call.getStreams().ownAudio.getAudioTracks()[0].id),senderId,'Neural conversion keeps same live RTP track');
+ await a.evaluate(async()=>{const {voiceChanger}=await import('/src/services/voiceChangerEngine.ts');voiceChanger.setPreset('natural_male');});
+ await a.waitForTimeout(500);
+
  await a.evaluate(()=>window.__call.setMuted(true));await a.waitForTimeout(800);const quiet=await sample(b);assert.ok(quiet.rms<.001,'Mute must silence the outgoing RTP track');
  assert.equal(await a.evaluate(async()=>{const {voiceChanger}=await import('/src/services/voiceChangerEngine.ts');return voiceChanger.micStream.getAudioTracks()[0].readyState;}),'live','Mute must not end the shared microphone');
  await a.evaluate(()=>window.__call.setMuted(false));await a.waitForTimeout(1000);assert.ok((await sample(b)).rms>.005,'Unmute restores remote audio');
@@ -100,7 +109,7 @@ a=await context.newPage();b=await context.newPage();for(const page of [a,b]){pag
  assert.deepEqual(converted.head,[79,103,103,83]);assert.ok(converted.bytes>100);assert.ok(converted.duration>=1);
  await a.getByRole('button',{name:/Record Voice/}).click();await a.waitForTimeout(500);await a.getByRole('button',{name:'Cancel',exact:true}).click();await a.waitForTimeout(400);assert.equal(voices.length,2,'Cancel cannot send a voice note');
  assert.deepEqual(errors,[]);
- fs.writeFileSync('.local/telegram-audio-results.json',JSON.stringify({passed:true,dry,wet,male,quiet,converted,packets:packets.length,checks:['two-peer native DH and SCTP signaling','real WebRTC remote microphone audio','live female and male presets on same RTP track','mute/unmute without ending shared mic','matching verification emojis','repeated call after teardown','video toggle preserves bidirectional audio','processor failure falls back and restarts','closed audio context recovers','voice-note recording and retained retry','real browser OGG/Opus worker','cancel does not send']},null,2));
+ fs.writeFileSync('.local/telegram-audio-results.json',JSON.stringify({passed:true,dry,wet,male,quiet,converted,neuralP50Ms:neuralState.neuralP50Ms,neuralP95Ms:neuralState.neuralP95Ms,packets:packets.length,checks:['two-peer native DH and SCTP signaling','real WebRTC remote microphone audio','live female, male and actual neural AI on same RTP track','mute/unmute without ending shared mic','matching verification emojis','repeated call after teardown','video toggle preserves bidirectional audio','processor failure falls back and restarts','closed audio context recovers','voice-note recording and retained retry','real browser OGG/Opus worker','cancel does not send']},null,2));
  console.log('Audio checks passed: native two-peer calls, live effects, mute, voice capture/retry/cancel and OGG/Opus.',JSON.stringify({dry,wet,male,quiet,converted,packets:packets.length}));
 }catch(error){console.error(error);console.error('Page errors:',errors);console.error('Voice requests:',voices.length);if(a)console.error('Page text:',await a.locator('body').innerText().catch(()=>''));if(a)console.error('Peer A:',await a.evaluate(()=>({statuses:window.__statuses,sdpFailure:window.__sdpFailure})).catch(()=>[]));if(b)console.error('Peer B:',await b.evaluate(()=>({statuses:window.__statuses,sdpFailure:window.__sdpFailure})).catch(()=>[]));process.exitCode=1;}
 finally{await browser.close();await server.close();}

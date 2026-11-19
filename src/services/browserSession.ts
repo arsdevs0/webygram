@@ -12,9 +12,6 @@ export async function initializeBrowserSession() {
   navigator.serviceWorker?.addEventListener('message', event => {
     if (event.data?.type === 'TELEGRAM_MEDIA_REQUEST') { event.ports[0]?.postMessage({ network: true }); event.ports[0]?.close(); }
   });
-  for (const registration of await navigator.serviceWorker?.getRegistrations() || []) {
-    if (registration.active?.scriptURL === new URL('/telegram-sw.js', location.origin).href) await registration.unregister();
-  }
   // Two tabs opened together must finish the cookie/marker handshake in order.
   if (navigator.locks) return navigator.locks.request('tgplus-browser-session', openBrowserSession);
   return openBrowserSession();

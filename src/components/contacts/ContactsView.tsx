@@ -29,7 +29,7 @@ export function ContactsView(p: Props) {
         <h2 className="tg-next-section-label">{sorting === 'name' ? 'Sorted by name' : 'Online first'} <span>{contacts.length}</span></h2>
         {loading && <p role="status" className="tg-next-empty">Loading contacts…</p>}
         {error && <div role="alert" className="tg-next-empty"><p>{error}</p><button className="tg-next-primary" onClick={() => setRevision(v => v + 1)}><RefreshCw className="w-4 h-4" />Retry</button></div>}
-        {!loading && !error && <div className="tg-next-card">{visible.map(contact => <button type="button" key={contact.id} className="tg-contact-row" onClick={() => p.onOpenContact(contact)}><Avatar src={contact.avatarUrl} title={contact.title} id={contact.id} size="md" /><span className="min-w-0"><strong className="block truncate">{contact.title}</strong><span className={'block text-[13px] ' + (contact.status === 'online' ? 'text-primary' : 'text-muted')}>{contact.status}</span></span></button>)}
+        {!loading && !error && <div className="tg-next-card">{visible.map(contact => <button type="button" key={contact.id} className="tg-contact-row" onClick={() => p.onOpenContact(contact)}><Avatar src={contact.avatarUrl} title={contact.title} id={contact.id} size="md" /><span className="min-w-0"><strong className="block truncate">{contact.title}</strong><span className={'block text-[13px] ' + (contact.status === 'online' ? 'text-primary' : 'text-muted')}>{contact.status}</span>{contact.phone && <span className="block text-xs text-muted mt-1">+{contact.phone.replace(/^\+/,'')}</span>}</span></button>)}
           {!visible.length && <p className="tg-next-empty">{query ? 'No contacts match your search.' : 'Your contact list is empty.'}</p>}</div>}
       </>}
     </div>

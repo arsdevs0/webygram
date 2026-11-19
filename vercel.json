@@ -5,9 +5,23 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|telegram-sw.js$).*)",
+      "source": "/((?!api/|assets/|voice/|icons/|licenses/|telegram-sw[.]js$|manifest[.]webmanifest$|webygram-logo[.]svg$|telegram-doodles[.]svg$|THIRD_PARTY_NOTICES[.]md$).*)",
       "destination": "/index.html"
     }
   ],
-  "headers": [{ "source": "/telegram-sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }, { "key": "Service-Worker-Allowed", "value": "/" }] }]
+  "headers": [
+    {
+      "source": "/telegram-sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    }
+  ]
 }

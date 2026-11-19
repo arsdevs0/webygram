@@ -1,3 +1,4 @@
+import type {AttachmentUpload} from './types/telegram';
 import { scrollToEnd } from './utils/scrollToEnd';
 import { GroupVoiceBanner } from './components/chat/GroupVoiceBanner';
 import { groupTimelineMessages, albumForwardSelection } from './utils/messageAlbums';
@@ -210,7 +211,7 @@ export default function App() {
     else if (replyingTo) setReplyingTo(null);
     else if (activeTopicId !== null) { setActiveTopicId(null); if (activeChatId) void telegramService.loadMessages(activeChatId, 0); }
     else backToChats();
-  });
+  }, remaining => setToastNotice(`Press Back ${remaining} more times quickly to leave`));
 
   const toastTimerRef = useRef<number | null>(null);
   const showToast = useCallback((msg: string) => {
@@ -531,7 +532,7 @@ export default function App() {
   const handleSendMessage = async (
     text: string,
     voiceMedia?: { fileDataUrl: string; fileName: string; duration: number; presetUsed?: string },
-    attachmentMedia?: { fileDataUrl: string; fileName: string; mediaType: 'photo' | 'video' | 'file' },
+    attachmentMedia?: AttachmentUpload,
     scheduleDate?: number
   ): Promise<boolean> => {
     if (!activeChatId) return false;
@@ -552,13 +553,15 @@ export default function App() {
       } else if (attachmentMedia) {
         await telegramService.sendMessage({
           chatId: activeChatId,
-          text: '',
+          text,
           replyToId: replyingTo?.id,
           topMsgId: activeTopicId || undefined,
           scheduleDate,
           fileDataUrl: attachmentMedia.fileDataUrl,
           fileName: attachmentMedia.fileName,
           mediaType: attachmentMedia.mediaType,
+          width:attachmentMedia.width,height:attachmentMedia.height,voiceDuration:attachmentMedia.duration,
+          ttlSeconds:attachmentMedia.ttlSeconds,spoiler:attachmentMedia.spoiler,silent:attachmentMedia.silent,
         });
       } else {
         await telegramService.sendMessage({
@@ -673,7 +676,10 @@ export default function App() {
   const handleOpenViewerMedia = useCallback((media: MediaAttachment, messageId: string) => {
     setActiveViewerMedia({ media, messageId });
   }, []);
-  const handleReplyMsg = useCallback((m: TelegramMessage) => setReplyingTo(m), []);
+  const handleReplyMsg = useCallback((m: TelegramMessage) => {
+    setReplyingTo(m); setEditingMessage(null);
+    window.requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.tg-composer textarea')?.focus({preventScroll:true}));
+  }, []);
   const handleEditMsg = useCallback((m: TelegramMessage) => setEditingMessage(m), []);
   const handleOpenForwardMsg = useCallback((msgId: string) => {
     if (!activeChatId) return;
@@ -763,19 +769,19 @@ export default function App() {
     caption: string;
     expireSeconds: number;
   }) => {
-    if (!activeChatId) return;
+    if (!activeChatId) return false;
     try {
       await telegramService.sendMessage({
         chatId: activeChatId,
-        text: params.caption || `Disappearing ${params.mediaType} (${params.expireSeconds}s)`,
+        text: params.caption,
         fileDataUrl: params.fileDataUrl,
         fileName: params.fileName,
         mediaType: params.mediaType,
         ttlSeconds: params.expireSeconds,
       });
-      showToast(`Sent disappearing ${params.mediaType}`);
+      showToast(`Sent timed ${params.mediaType}`); return true;
     } catch (err) {
-      showToast((err as Error).message || 'Failed to send disappearing media');
+      showToast((err as Error).message || 'Failed to send timed media'); return false;
     }
   };
 
@@ -1798,20 +1804,20 @@ export default function App() {
       <DisappearingMediaModal
         isOpen={isDisappearingModalOpen}
         onClose={() => setIsDisappearingModalOpen(false)}
-        onSend={(params) => void handleSendDisappearingMedia(params)}
+        onSend={handleSendDisappearingMedia}
       />
 
-      {activeViewerMedia && activeChat && (
+      {activeViewerMedia && (
         <MediaViewerModal
           key={`${viewerChatId}:${activeViewerMedia.messageId}`}
-          media={activeViewerMedia.media}
+          media={telegramService.getMessages(viewerChatId).find(message => message.id === activeViewerMedia.messageId)?.media || telegramService.getSharedMedia(viewerChatId, 'media')?.find(message => message.id === activeViewerMedia.messageId)?.media || activeViewerMedia.media}
           chatId={viewerChatId}
-          chatTitle={chats.find(chat=>chat.id===viewerChatId)?.title || activeChat.title}
+          chatTitle={chats.find(chat=>chat.id===viewerChatId)?.title || activeChat?.title || 'Chat'}
           gallery={viewerGallery}
           onForward={(chatId,messageId)=>{const source=[...telegramService.getMessages(chatId),...(telegramService.getSharedMedia(chatId,'media') || [])];const message=source.find(item=>item.id===messageId);if(!message || !/^\d+$/.test(messageId)){showToast('This item cannot be forwarded as a message.');return;}const selected=albumForwardSelection([...new Map(source.map(item=>[item.id,item])).values()],message);setActiveViewerMedia(null);setForwardPickerState({isOpen:true,fromChatId:chatId,messageIds:selected.map(item=>item.id),messages:selected});}}
           onNavigate={(media,messageId)=>setActiveViewerMedia({media,messageId,chatId:viewerChatId})}
           messageId={activeViewerMedia.messageId}
-          isProtected={activeChat.isProtected}
+          isProtected={chats.find(chat=>chat.id===viewerChatId)?.isProtected || false}
           onClose={() => setActiveViewerMedia(null)}
         />
       )}

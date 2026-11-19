@@ -1,3 +1,4 @@
+import {installWebygram,isInstalled} from '../../services/pwaInstall';
 import React, { useState } from 'react';
 import { ChevronRight, Search, X, UserRound, Bell, Monitor, Folder, Shield, Trash2, FolderArchive, EyeOff, AudioLines, Palette, QrCode, Phone, Bookmark, Database, Battery, Globe } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
@@ -12,6 +13,7 @@ interface Props {
   powerSaving: boolean; onPowerSaving: () => void;
 }
 export function SettingsHome(p: Props) {
+  const [installNotice,setInstallNotice]=useState('');
   const [query, setQuery] = useState(''), [searching, setSearching] = useState(false);
   useEscapeDismiss(searching || Boolean(query), () => { setQuery(''); setSearching(false); });
   const groups = [
@@ -44,6 +46,7 @@ export function SettingsHome(p: Props) {
         {groupIndex === 0 && !query && <><button type="button" role="switch" aria-checked={p.powerSaving} onClick={p.onPowerSaving} className="tg-next-row"><span className="tg-next-icon tone-1"><Battery /></span><span className="tg-settings-row-label flex-1"><span>Power Saving</span><small>Reduce power usage</small></span><span className={'tg-next-switch ' + (p.powerSaving ? 'is-on' : '')}><span /></span></button><div className="tg-next-row"><span className="tg-next-icon tone-4"><Globe /></span><span className="flex-1">Language</span><span className="text-muted">English</span></div></>}
       </div></section>)}
       {!filtered.length && <p role="status" className="tg-next-empty">No settings match your search.</p>}
+      {!isInstalled() && <button className="tg-next-primary w-full" onClick={async()=>setInstallNotice(await installWebygram())}>Install Webygram</button>}{installNotice && <p role="status" className="text-sm py-3 text-muted">{installNotice}</p>}
       <p className="tg-next-footer">Webygram · Telegram client</p>
     </div></section>;
 }

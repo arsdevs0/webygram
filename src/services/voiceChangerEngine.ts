@@ -8,15 +8,22 @@
  */
 
 import { VoiceChangerState, VoicePreset, BuiltinPresetKey, VoiceGender } from '../types/voiceChanger';
+import type { NeuralVoiceSession, NeuralUpdate } from './neuralVoice/NeuralVoiceSession';
 
 export const BUILTIN_VOICE_PRESETS: Record<BuiltinPresetKey, VoicePreset> = {
+  ai_female: {
+    id: 'ai_female', name: 'AI Woman', gender: 'female',
+    description: 'Local neural conversion. Optional 26 MB download and device speed check.',
+    pitchShift: 5, formantShift: 3, tone: 0, resonance: 0, vibrato: 0,
+    noiseGateThreshold: -52, enhancement: true, reverbAmount: 0, icon: 'Cpu',
+  },
   natural_female: {
     id: 'natural_female',
     name: 'Natural Woman',
     gender: 'female',
     description: 'Adult feminine tone with adaptive pitch and independent vocal tract shaping.',
-    pitchShift: 7,
-    formantShift: 4,
+    pitchShift: 5,
+    formantShift: 3,
     tone: 1,
     resonance: 4,
     vibrato: 0,
@@ -30,8 +37,8 @@ export const BUILTIN_VOICE_PRESETS: Record<BuiltinPresetKey, VoicePreset> = {
     name: 'Soft & Sweet Female',
     gender: 'female',
     description: 'Gentle feminine tone (212 Hz target, 1.22x vocal tract) with warm air and smooth highs.',
-    pitchShift: 8,
-    formantShift: 5,
+    pitchShift: 6,
+    formantShift: 3,
     tone: 0,
     resonance: 3,
     vibrato: 0,
@@ -446,22 +453,22 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
     // Adaptive Female F0 calibration: gently guides real speech into natural female range without chipmunking
     let targetRatio = pitchRatio;
     // Use a slowly learned baseline so conversion keeps the speaker\'s intonation.
-    if (voicedConfidence > 0.6 && this.detectedF0 >= 72 && this.detectedF0 <= 300) {
+    if (voicedConfidence > 0.6 && this.detectedF0 >= 72 && this.detectedF0 <= 360) {
       this.sourceBaselineHz = this.sourceBaselineHz ? this.sourceBaselineHz * 0.99 + this.detectedF0 * 0.01 : this.detectedF0;
     }
     if (
       femaleCalibration > 0.5 &&
       voicedConfidence > 0.45 &&
       this.detectedF0 >= 72 &&
-      this.detectedF0 <= 255
+      this.detectedF0 <= 360
     ) {
       const idealRatio = femaleTargetHz / (this.sourceBaselineHz || this.detectedF0);
-      const minBound = Math.max(1.12, pitchRatio * 0.84);
-      const maxBound = Math.min(2.12, pitchRatio * 1.18);
+      const minBound = 0.85;
+      const maxBound = Math.min(1.9, pitchRatio * 1.12);
       const clampedIdeal = Math.max(minBound, Math.min(maxBound, idealRatio));
-      targetRatio = pitchRatio * 0.35 + clampedIdeal * 0.65;
+      targetRatio = clampedIdeal;
     }
-    this.smoothPitchRatio += (targetRatio - this.smoothPitchRatio) * 0.22;
+    this.smoothPitchRatio += (targetRatio - this.smoothPitchRatio) * 0.065;
     const activePitch = this.smoothPitchRatio;
 
     // 5. Smooth log-spectral envelope (finer resolution preserves F1/F2/F3 vocal tract shape accurately)
@@ -508,7 +515,10 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
     const outMag = this.outMag;
     const nextOutPhase = this.nextOutPhase;
     const isFemale = femaleCalibration > 0.5;
-    const voicedMask = Math.max(0, Math.min(1, (voicedConfidence - 0.18) / 0.42));
+    // Hysteresis avoids mixing an original low fundamental under shifted vowels.
+    if(voicedConfidence>.55)this.voicedMode=true;
+    else if(voicedConfidence<.20)this.voicedMode=false;
+    const voicedMask=this.voicedMode?1:0;
 
     for (let k = 1; k < HALF; k++) {
       const freqHz = k * binHz;
@@ -540,16 +550,7 @@ class FormantPhaseVocoderProcessor extends AudioWorkletProcessor {
       if (envScale < 0.4) envScale = 0.4;
 
       // Subtle Female Glottal Spectral Tilt: warmer F0 body, less pinched mid-nasal buzz, soft air
-      let tiltScale = 1.0;
-      if (isFemale) {
-        if (freqHz >= 150 && freqHz <= 290) {
-          tiltScale = 1.18; // soft H1 fundamental warmth
-        } else if (freqHz >= 850 && freqHz <= 1450) {
-          tiltScale = 0.84; // smooth out tinny nasal resonance
-        } else if (freqHz >= 3400 && freqHz <= 6200) {
-          tiltScale = 1.09; // gentle breathy feminine air
-        }
-      }
+      const tiltScale = isFemale ? Math.pow(Math.max(150,freqHz)/150,-.025) : 1;
 
       // Crossfade complex spectra so consonants retain their own phase.
       // Interpolating an angle with unrelated magnitudes causes phase smearing.
@@ -687,6 +688,13 @@ export class VoiceChangerEngine {
   private pitchWorkletNode: AudioWorkletNode | null = null;
   private workletLoaded = false;
   private processorFailed = false;
+  private dryGain: GainNode | null = null;
+  private neuralGain: GainNode | null = null;
+  private neuralFilters: BiquadFilterNode[] = [];
+  private neuralSession: NeuralVoiceSession | null = null;
+  private neuralPromise: Promise<void> | null = null;
+  private neuralGeneration = 0;
+  private neuralBlocked = false;
 
   // Multi-band Vocal Tract Conditioning & De-Esser
   private chestCutFilter: BiquadFilterNode | null = null;
@@ -751,6 +759,7 @@ export class VoiceChangerEngine {
       lastError: null,
       detectedInputHz: 0,
       outputPitchHz: 0,
+      activeEngine: 'original', neuralStatus: 'idle', neuralMessage: '',
     };
 
     const saved = localStorage.getItem(STORAGE_KEY_STATE);
@@ -765,6 +774,8 @@ export class VoiceChangerEngine {
           lastError: null,
           detectedInputHz: 0,
           outputPitchHz: 0,
+          activeEngine: 'original', neuralStatus: 'idle', neuralMessage: '',
+          neuralP50Ms: undefined, neuralP95Ms: undefined,
           customPresets,
         };
       } catch {
@@ -797,6 +808,8 @@ export class VoiceChangerEngine {
         delete toSave.lastError;
         delete toSave.detectedInputHz;
         delete toSave.outputPitchHz;
+        delete toSave.activeEngine; delete toSave.neuralStatus; delete toSave.neuralMessage;
+        delete toSave.neuralP50Ms; delete toSave.neuralP95Ms;
         localStorage.setItem(STORAGE_KEY_STATE, JSON.stringify(toSave));
       } catch {
         // ignore storage error
@@ -870,6 +883,8 @@ export class VoiceChangerEngine {
         this.state.lastError = 'Live pitch effects are unavailable in this browser. Your microphone still works with its original voice.';
       } else this.state.lastError = null;
       this.notify(false);
+      await this.syncNeuralMode();
+      await this.waitForNeuralAudio();
       return true;
     } catch (err) {
       const msg = (err as Error)?.message || 'Could not access microphone.';
@@ -894,6 +909,8 @@ export class VoiceChangerEngine {
       }
     }
     this.applyCurrentSettings();
+    await this.syncNeuralMode();
+    await this.waitForNeuralAudio();
     return this.hasLiveMic() && this.audioContext.state === "running";
   }
 
@@ -943,6 +960,92 @@ export class VoiceChangerEngine {
     return ok ? this.micStream : null;
   }
 
+  private waitForNeuralAudio(): Promise<void> {
+    if (this.state.neuralStatus !== 'buffering') return Promise.resolve();
+    return new Promise(resolve => {
+      const finish = () => { clearTimeout(timer); unsubscribe(); resolve(); };
+      const unsubscribe = this.subscribe(state => { if (state.neuralStatus !== 'buffering') finish(); });
+      const timer = setTimeout(() => {
+        if (this.state.neuralStatus === 'buffering') {
+          this.neuralBlocked = true; this.neuralSession?.dispose();
+          this.state.neuralStatus = 'error';
+          this.state.neuralMessage = 'AI audio did not start. Lightweight effects are active.';
+          this.applyCurrentSettings(); this.notify(false);
+        }
+        finish();
+      }, 1000);
+    });
+  }
+
+  private stopNeuralMode() {
+    this.neuralGeneration++;
+    this.neuralSession?.dispose(); this.neuralSession = null;
+    this.neuralPromise = null;
+    if (this.neuralFilters[0]) { try { this.highpassFilter?.disconnect(this.neuralFilters[0]); } catch { /* Graph may have already changed. */ } }
+    for (const filter of this.neuralFilters) filter.disconnect();
+    this.neuralFilters = [];
+    this.state.neuralStatus = 'idle'; this.state.neuralMessage = '';
+  }
+
+  private syncNeuralMode(retry = false): Promise<void> {
+    if (!this.state.enabled || this.state.selectedPresetId !== 'ai_female') {
+      this.stopNeuralMode(); this.neuralBlocked = false; this.applyCurrentSettings();
+      return Promise.resolve();
+    }
+    if (!this.audioContext?.audioWorklet || !this.isProcessing) return Promise.resolve();
+    if (retry) { this.stopNeuralMode(); this.neuralBlocked = false; }
+    if (this.neuralPromise) return this.neuralPromise;
+    if (this.neuralSession || this.neuralBlocked) return Promise.resolve();
+    const generation = ++this.neuralGeneration;
+    const pending = this.startNeuralMode(generation);
+    this.neuralPromise = pending;
+    void pending.finally(() => { if (this.neuralPromise === pending) this.neuralPromise = null; });
+    return pending;
+  }
+
+  private async startNeuralMode(generation: number) {
+    try {
+      const { NeuralVoiceSession } = await import('./neuralVoice/NeuralVoiceSession');
+      if (generation !== this.neuralGeneration) return;
+      const context = this.audioContext!;
+      const session = new NeuralVoiceSession(context, (update: NeuralUpdate) => {
+        if (generation !== this.neuralGeneration) return;
+        this.state.neuralStatus = update.status;
+        this.state.neuralMessage = update.message || '';
+        if (update.p50ms !== undefined) this.state.neuralP50Ms = update.p50ms;
+        if (update.p95ms !== undefined) this.state.neuralP95Ms = update.p95ms;
+        if (update.status === 'error' || update.status === 'slow') this.neuralBlocked = true;
+        this.applyCurrentSettings(); this.notify(false);
+      });
+      this.neuralSession = session;
+      const ready = await session.start();
+      if (!ready || generation !== this.neuralGeneration) { session.dispose(); if (this.neuralSession === session) this.neuralSession = null; return; }
+      // Two lowpasses suppress aliasing when converting 44.1/48 kHz input to 16 kHz.
+      this.neuralFilters = [context.createBiquadFilter(), context.createBiquadFilter()];
+      for (const filter of this.neuralFilters) { filter.type = 'lowpass'; filter.frequency.value = 6500; filter.Q.value = .707; }
+      this.highpassFilter!.connect(this.neuralFilters[0]);
+      this.neuralFilters[0].connect(this.neuralFilters[1]);
+      this.neuralFilters[1].connect(session.node!);
+      session.node!.connect(this.neuralGain!);
+      session.activate();
+    } catch (error) {
+      if (generation !== this.neuralGeneration) return;
+      this.neuralBlocked = true;
+      this.neuralSession?.dispose(); this.neuralSession = null;
+      this.state.neuralStatus = 'error';
+      this.state.neuralMessage = (error as Error).message || 'AI unavailable. Lightweight effects are active.';
+      this.applyCurrentSettings(); this.notify(false);
+    }
+  }
+
+  public async retryNeuralVoice() {
+    if (this.state.selectedPresetId !== 'ai_female') this.setPreset('ai_female');
+    this.state.enabled = true;
+    if (!this.isProcessing) await this.initialize();
+    await this.syncNeuralMode(true);
+    this.notify();
+  }
+
   private teardownDspNodes() {
     const nodes: (AudioNode | null)[] = [
       this.highpassFilter,
@@ -957,6 +1060,7 @@ export class VoiceChangerEngine {
       this.compressor,
       this.analyserNode,
       this.livePreviewGain,
+      this.dryGain, this.neuralGain, ...this.neuralFilters,
     ];
     for (const n of nodes) {
       if (n) {
@@ -973,6 +1077,7 @@ export class VoiceChangerEngine {
   private buildDspGraph() {
     if (!this.audioContext || !this.sourceNode) return;
 
+    this.stopNeuralMode();
     this.teardownDspNodes();
 
     try {
@@ -1056,12 +1161,17 @@ export class VoiceChangerEngine {
       this.livePreviewGain = this.audioContext.createGain();
       this.livePreviewGain.gain.value = this.state.livePreview ? 1.25 : 0.0;
 
+      this.dryGain = this.audioContext.createGain();
+      this.neuralGain = this.audioContext.createGain();
+      this.neuralGain.gain.value = 0;
+      this.dryGain.connect(this.chestCutFilter);
+      this.neuralGain.connect(this.chestCutFilter);
       this.sourceNode.connect(this.highpassFilter);
       if (this.pitchWorkletNode) {
         this.highpassFilter.connect(this.pitchWorkletNode);
-        this.pitchWorkletNode.connect(this.chestCutFilter);
+        this.pitchWorkletNode.connect(this.dryGain);
       } else {
-        this.highpassFilter.connect(this.chestCutFilter);
+        this.highpassFilter.connect(this.dryGain);
       }
 
       this.chestCutFilter.connect(this.formantF1Filter);
@@ -1100,11 +1210,18 @@ export class VoiceChangerEngine {
       livePreview,
     } = this.state;
 
-    const activePitch = enabled ? pitchShift : 0;
-    const activeFormant = enabled ? formantShift : 0;
-    const activeTone = enabled ? tone : 0;
-    const activeResonance = enabled ? resonance : 0;
-    const isFemaleCurve = enabled && (gender === 'female' || activeFormant > 1);
+    const aiRequested = this.state.selectedPresetId === 'ai_female';
+    const neuralActive = enabled && aiRequested && this.state.neuralStatus === 'active' && Boolean(this.neuralSession);
+    // Do not compete with inference using the legacy vocoder while AI warms up.
+    const effectsEnabled = enabled && !neuralActive && (!aiRequested || this.neuralBlocked);
+    this.state.activeEngine = neuralActive ? 'neural' : effectsEnabled && this.pitchWorkletNode ? 'dsp' : 'original';
+    this.dryGain?.gain.setTargetAtTime(neuralActive ? 0 : 1, t, .025);
+    this.neuralGain?.gain.setTargetAtTime(neuralActive ? 1 : 0, t, .025);
+    const activePitch = effectsEnabled ? pitchShift : 0;
+    const activeFormant = effectsEnabled ? formantShift : 0;
+    const activeTone = effectsEnabled ? tone : 0;
+    const activeResonance = effectsEnabled ? resonance : 0;
+    const isFemaleCurve = effectsEnabled && (gender === 'female' || activeFormant > 1);
 
     const pitchRatio = Math.pow(2, activePitch / 12);
     // Decoupled vocal tract ratio: +4 formantShift => ~1.18x (17.5cm -> 14.8cm female tract)
@@ -1114,10 +1231,10 @@ export class VoiceChangerEngine {
     if (this.pitchWorkletNode) {
       const targetFemaleHz =
         this.state.selectedPresetId === 'soft_female'
-          ? 212
+          ? 202
           : this.state.selectedPresetId === 'bright_female'
           ? 182
-          : 198;
+          : 190;
 
       this.pitchWorkletNode.parameters
         .get('pitchRatio')
@@ -1127,7 +1244,7 @@ export class VoiceChangerEngine {
         ?.setTargetAtTime(Math.max(0.5, Math.min(1.8, formantRatio)), t, 0.035);
       this.pitchWorkletNode.parameters
         .get('enabled')
-        ?.setValueAtTime(enabled ? 1 : 0, t);
+        ?.setValueAtTime(effectsEnabled ? 1 : 0, t);
       this.pitchWorkletNode.parameters
         .get('gateThreshold')
         ?.setValueAtTime(gateLinear, t);
@@ -1155,7 +1272,7 @@ export class VoiceChangerEngine {
     }
 
     if (this.formantF2Filter) {
-      const f2Gain = isFemaleCurve ? 0.6 + activeResonance * 0.08 : activeFormant < 0 ? -1.5 : 0;
+      const f2Gain = isFemaleCurve ? 0.2 + activeResonance * 0.03 : activeFormant < 0 ? -1.5 : 0;
       this.formantF2Filter.gain.setTargetAtTime(f2Gain, t, 0.04);
     }
 
@@ -1170,7 +1287,7 @@ export class VoiceChangerEngine {
 
     if (this.toneLowShelf && this.toneHighShelf) {
       this.toneLowShelf.gain.setTargetAtTime(-activeTone * 0.55, t, 0.04);
-      const airBoost = (isFemaleCurve ? 1.5 : 0) + activeTone * 0.55;
+      const airBoost = (isFemaleCurve ? 0.5 : 0) + activeTone * 0.55;
       this.toneHighShelf.gain.setTargetAtTime(airBoost, t, 0.04);
     }
 
@@ -1199,6 +1316,7 @@ export class VoiceChangerEngine {
       this.state.lastError ||= 'Live pitch effects could not start. Check microphone access and try again.';
     }
     this.applyCurrentSettings();
+    await this.syncNeuralMode();
     this.notify();
   }
 
@@ -1229,6 +1347,7 @@ export class VoiceChangerEngine {
     }
 
     this.applyCurrentSettings();
+    void this.syncNeuralMode();
     this.notify();
   }
 
@@ -1248,6 +1367,7 @@ export class VoiceChangerEngine {
   public setPitch(pitch: number) {
     this.state.pitchShift = pitch;
     this.state.selectedPresetId = 'custom';
+    this.stopNeuralMode(); this.neuralBlocked = false;
     if (!this.state.enabled) {
       this.state.enabled = true;
       void this.ensureReadyForCapture();
@@ -1259,6 +1379,7 @@ export class VoiceChangerEngine {
   public setTone(tone: number) {
     this.state.tone = tone;
     this.state.selectedPresetId = 'custom';
+    this.stopNeuralMode(); this.neuralBlocked = false;
     this.applyCurrentSettings();
     this.notify();
   }
@@ -1266,6 +1387,7 @@ export class VoiceChangerEngine {
   public setFormantShift(formant: number) {
     this.state.formantShift = formant;
     this.state.selectedPresetId = 'custom';
+    this.stopNeuralMode(); this.neuralBlocked = false;
     if (!this.state.enabled) {
       this.state.enabled = true;
       void this.ensureReadyForCapture();
@@ -1277,6 +1399,7 @@ export class VoiceChangerEngine {
   public setResonance(resonance: number) {
     this.state.resonance = resonance;
     this.state.selectedPresetId = 'custom';
+    this.stopNeuralMode(); this.neuralBlocked = false;
     this.applyCurrentSettings();
     this.notify();
   }
@@ -1309,6 +1432,7 @@ export class VoiceChangerEngine {
       await this.acquireMicrophone();
       this.buildDspGraph();
       this.applyCurrentSettings();
+      await this.syncNeuralMode();
     }
   }
 
@@ -1344,12 +1468,14 @@ export class VoiceChangerEngine {
     const updated = [...this.state.customPresets, newPreset];
     this.state.customPresets = updated;
     this.state.selectedPresetId = newPreset.id;
+    this.stopNeuralMode(); this.applyCurrentSettings();
     localStorage.setItem(STORAGE_KEY_CUSTOM_PRESETS, JSON.stringify(updated));
     this.notify();
     return newPreset;
   }
 
   public resetToDefaults() {
+    this.stopNeuralMode(); this.neuralBlocked = false;
     const defaultPreset = BUILTIN_VOICE_PRESETS.natural_female;
     this.state = {
       ...this.state,

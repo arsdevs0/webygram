@@ -1,3 +1,4 @@
+import { mediaSecondsRemaining, VIEW_ONCE_SECONDS } from '../../utils/mediaReceipt';
 import { mediaRetrySource } from '../../utils/mediaRetrySource';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -54,6 +55,9 @@ export const MediaViewerModal: React.FC<Props> = ({
 }) => {
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [isTimerFrozen, setIsTimerFrozen] = useState(false);
+  const [localExpiresAt, setLocalExpiresAt] = useState<number | undefined>();
+  const seenAttemptRef = useRef(false);
+  const isOutgoing = Boolean(telegramService.getMessages(chatId).find(item => item.id === messageId)?.isOutgoing);
   const [hasExpired, setHasExpired] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [savingVault, setSavingVault] = useState(false);
@@ -107,7 +111,8 @@ export const MediaViewerModal: React.FC<Props> = ({
     setIsTimerFrozen(false);
     setSavedSuccess(false);
     expiryHandledRef.current = false;
-    setSecondsRemaining(media?.isDisappearing && !media.isExpired ? media.expireSeconds || 5 : null);
+    setSecondsRemaining(mediaSecondsRemaining(media));
+    setLocalExpiresAt(undefined); seenAttemptRef.current = false;
     setSeenSent(Boolean(media?.viewed));
     setForwardedOk(false);
     setMediaError(false);
@@ -118,16 +123,25 @@ export const MediaViewerModal: React.FC<Props> = ({
   }, [chatId, messageId, media?.url, media?.isExpired, media?.isDisappearing, media?.expireSeconds]);
 
   useEffect(() => {
-    if (media?.isDisappearing && !media.isExpired) {
-      telegramService.markMediaAsViewed(chatId, messageId);
-    }
-  }, [chatId, messageId, media?.isDisappearing, media?.isExpired]);
+    if (media?.viewed) { setSeenSent(true); setIsTimerFrozen(false); }
+  }, [media?.viewed, media?.expiresAt]);
 
   useEffect(() => {
-    if (isTimerFrozen || secondsRemaining === null || secondsRemaining === 0) return;
-    const timer = window.setTimeout(() => setSecondsRemaining(value => value === null ? null : Math.max(0, value - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [isTimerFrozen, secondsRemaining]);
+    if (!media?.isDisappearing || !mediaLoaded || media.isExpired || isOutgoing) return;
+    if (!localExpiresAt && !media.expiresAt && media.expireSeconds !== VIEW_ONCE_SECONDS)
+      setLocalExpiresAt(Date.now() + (media.expireSeconds || 5) * 1000);
+    if (ayuSettings.markSeenOnTimerClick && !seenAttemptRef.current && !seenSent) {
+      seenAttemptRef.current = true; void handleMarkAsSeen();
+    }
+  }, [mediaLoaded, chatId, messageId, media?.expiresAt, localExpiresAt, isOutgoing]);
+
+  useEffect(() => {
+    const expiresAt = media?.expiresAt || localExpiresAt;
+    if (isTimerFrozen || !expiresAt || media?.expireSeconds === VIEW_ONCE_SECONDS) return;
+    const tick = () => setSecondsRemaining(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)));
+    tick(); const timer = window.setInterval(tick, 250);
+    return () => clearInterval(timer);
+  }, [isTimerFrozen, media?.expiresAt, localExpiresAt, media?.expireSeconds]);
 
   useEffect(() => {
     if (secondsRemaining !== 0 || expiryHandledRef.current) return;
@@ -166,8 +180,11 @@ export const MediaViewerModal: React.FC<Props> = ({
     const ok = await telegramService.markMessageAsSeenToSender(chatId, messageId);
     setSendingSeen(false);
     if (ok) {
-      setSeenSent(true);
-    }
+      setSeenSent(true); setIsTimerFrozen(false);
+      const opened = telegramService.getMessages(chatId).find(item => item.id === messageId)?.media;
+      if (opened?.expiresAt) setLocalExpiresAt(opened.expiresAt);
+      setActionNotice('Opened on Telegram. The sender has been notified.');
+    } else setActionNotice('Could not notify the sender. Tap Mark seen to retry.');
   };
 
   const handleForwardBypass = async () => {
@@ -190,6 +207,7 @@ export const MediaViewerModal: React.FC<Props> = ({
   const handleToggleFreeze = () => {
     if (isTimerFrozen) {
       setIsTimerFrozen(false);
+      if (secondsRemaining !== null) setLocalExpiresAt(Date.now() + secondsRemaining * 1000);
     } else {
       setIsTimerFrozen(true);
       soundEffects.playPop();
@@ -214,10 +232,10 @@ export const MediaViewerModal: React.FC<Props> = ({
                 <Clock className="w-4 h-4 shrink-0" />
                 <span className="truncate tabular-nums">
                   {isTimerFrozen
-                    ? 'Timer Paused'
+                    ? 'Paused on this device'
                     : secondsRemaining === 0 && preventTTL
                     ? savedSuccess ? 'Preserved in Vault' : 'Timer ended'
-                    : `Disappearing ${media.type === 'video' ? 'Video' : 'Photo'}: ${secondsRemaining ?? media.expireSeconds}s`}
+                    : media.expireSeconds === VIEW_ONCE_SECONDS ? 'View once' : secondsRemaining === null ? isOutgoing ? 'Waiting for recipient' : 'Timed media' : `${secondsRemaining}s remaining`}
                 </span>
               </div>
             ) : isProtected ? (
@@ -241,21 +259,21 @@ export const MediaViewerModal: React.FC<Props> = ({
                 {zoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
               </button>
             )}
-            {media.isDisappearing && (
+            {media.isDisappearing && !isOutgoing && (
               <button
                 type="button"
                 onClick={handleMarkAsSeen}
                 disabled={sendingSeen || seenSent}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap border ${
+                className={`tg-seen-button flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap border ${
                   seenSent
                     ? 'bg-emerald-600/15 border-emerald-500/40 text-emerald-500'
                     : 'bg-elevated dark:bg-elevated border-outline dark:border-outline hover:border-primary'
                 }`}
                 title="Send real Telegram Seen receipt to the sender"
               >
-                <Eye className="w-3.5 h-3.5" />
+                {sendingSeen ? <Loader2 className="w-4 h-4 animate-spin" /> : seenSent ? <Check className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 <span>
-                  {sendingSeen ? 'Sending...' : seenSent ? 'Marked Seen ✓' : 'Mark Seen to Sender'}
+                  {sendingSeen ? 'Sending…' : seenSent ? 'Opened ✓' : 'Mark seen'}
                 </span>
               </button>
             )}
@@ -287,7 +305,7 @@ export const MediaViewerModal: React.FC<Props> = ({
               <span>{savedSuccess ? 'Saved' : savingVault ? 'Saving...' : 'Save'}</span>
             </button>
 
-            {media.isDisappearing && !hasExpired && (
+            {media.isDisappearing && !hasExpired && !seenSent && !media.expiresAt && media.expireSeconds !== VIEW_ONCE_SECONDS && (
               <button
                 type="button"
                 onClick={handleToggleFreeze}
@@ -333,6 +351,7 @@ export const MediaViewerModal: React.FC<Props> = ({
         <div onTouchStart={event=>{const touch=event.touches[0];swipe.current={x:touch.clientX,y:touch.clientY};}} onTouchEnd={event=>{const start=swipe.current,touch=event.changedTouches[0];swipe.current=undefined;if(!start||zoomed)return;const x=touch.clientX-start.x,y=touch.clientY-start.y;if(Math.abs(x)>65&&Math.abs(y)<50)navigate(x<0?1:-1);}} className={`tg-media-stage relative flex-1 flex items-center justify-center w-full min-h-40 max-h-[76dvh] rounded-2xl border border-[#1E2E4E] bg-black ${zoomed ? 'overflow-auto' : 'overflow-hidden'}`}>
           {index > 0 && <button type="button" className="tg-gallery-arrow prev" aria-label="Previous media" onClick={()=>navigate(-1)}><ChevronLeft /></button>}
           {index >= 0 && index < gallery.length-1 && <button type="button" className="tg-gallery-arrow next" aria-label="Next media" onClick={()=>navigate(1)}><ChevronRight /></button>}
+          {!mediaLoaded && !hasExpired && (media.inlineThumb || media.thumbnailUrl) && <img src={media.inlineThumb || media.thumbnailUrl} alt="" aria-hidden="true" className="tg-viewer-preview"/>}
           {!mediaLoaded && !mediaError && !hasExpired && <div role="status" aria-label="Loading media" className="absolute inset-0 flex items-center justify-center pointer-events-none"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}
           {hasExpired && !preventTTL ? (
             <div className="flex flex-col items-center justify-center p-8 text-center text-muted space-y-3">
@@ -383,7 +402,7 @@ export const MediaViewerModal: React.FC<Props> = ({
                     src={
                       mediaRetrySource(media.url, retryNonce)
                     }
-                    poster={media.thumbnailUrl}
+                    poster={media.inlineThumb || media.thumbnailUrl}
                     controls
                     loop={Boolean(media.isAnimated)}
                     muted={isVideoMuted}
@@ -436,17 +455,17 @@ export const MediaViewerModal: React.FC<Props> = ({
                   }
                   alt={media.fileName || 'Telegram Media'}
                   onError={() => setMediaError(true)}
-                  onLoad={() => setMediaLoaded(true)}
+                  onLoad={() => {setMediaLoaded(true);setMediaError(false);}}
                   onDoubleClick={() => setZoomed(value => !value)}
-                  className={zoomed ? 'max-w-none max-h-none shrink-0 self-start cursor-zoom-out select-none' : 'max-h-[74dvh] max-w-full object-contain rounded-xl select-none cursor-zoom-in'}
+                  className={zoomed ? 'relative z-10 max-w-none max-h-none shrink-0 self-start cursor-zoom-out select-none' : 'relative z-10 max-h-[74dvh] max-w-full object-contain rounded-xl select-none cursor-zoom-in'}
                   draggable={false}
                 />
               )}
 
               {media.isDisappearing && (
-                <div className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/75 border border-white/20 text-white font-mono text-xs font-semibold tabular-nums">
+                <div className="tg-media-timer absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/75 border border-white/20 text-white font-mono text-xs font-semibold tabular-nums">
                   <Clock className="w-3.5 h-3.5 text-primary" />
-                  <span>{isTimerFrozen ? 'PAUSED' : `${secondsRemaining}s`}</span>
+                  <span>{isTimerFrozen ? 'Paused' : media.expireSeconds === VIEW_ONCE_SECONDS ? '1×' : secondsRemaining === null ? `${media.expireSeconds || 5}s` : `${secondsRemaining}s`}</span>
                 </div>
               )}
 

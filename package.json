@@ -31,6 +31,7 @@
     "fflate": "^0.8.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "onnxruntime-web": "1.23.2",
     "opus-recorder": "^8.0.5",
     "path-browserify": "^1.0.1",
     "qrcode": "^1.5.4",

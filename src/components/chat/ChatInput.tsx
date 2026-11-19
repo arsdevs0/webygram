@@ -1,3 +1,7 @@
+import { VoiceRecordingBar } from './VoiceRecordingBar';
+import {AttachmentPreview} from './AttachmentPreview';
+import type {AttachmentUpload} from '../../types/telegram';
+import {MAX_ATTACHMENT_BYTES} from '../../utils/attachmentDraft';
 import { useEscapeDismiss } from '../common/useEscapeDismiss';
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -63,7 +67,7 @@ interface Props {
   onSendMessage: (
     text: string,
     voiceMedia?: { fileDataUrl: string; fileName: string; duration: number; presetUsed?: string },
-    attachmentMedia?: { fileDataUrl: string; fileName: string; mediaType: 'photo' | 'video' | 'file' },
+    attachmentMedia?: AttachmentUpload,
     scheduleDate?: number
   ) => Promise<boolean | void> | void;
   onSaveEdit: (newText: string) => Promise<boolean> | boolean;
@@ -158,7 +162,13 @@ export const ChatInput: React.FC<Props> = ({
   const [text, setText] = useState('');
   const [localSendError, setLocalSendError] = useState<string | null>(null);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [recordingLocked, setRecordingLocked] = useState(true);
+  const captureGenerationRef = useRef(0);
+  const holdRef = useRef<{pointer:number;x:number;y:number;active:boolean;locked:boolean;sendOnReady:boolean} | null>(null);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressRecordClickRef = useRef(false);
   const [isVoiceBusy, setIsVoiceBusy] = useState(false);
+  const [attachmentFile,setAttachmentFile]=useState<File|null>(null);
   const [pendingVoice, setPendingVoice] = useState<{fileDataUrl: string; fileName: string; duration: number; presetUsed?: string} | null>(null);
   const voiceStartingRef = useRef(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -195,10 +205,13 @@ export const ChatInput: React.FC<Props> = ({
 
   useEffect(() => {
     mountedRef.current = true;
-    const unsubVoice = voiceChanger.subscribe((s) => setVoiceState(s));
+    const unsubVoice = voiceChanger.subscribe((next) => setVoiceState(previous =>
+      previous.enabled === next.enabled && previous.selectedPresetId === next.selectedPresetId && previous.isReady === next.isReady && previous.lastError === next.lastError && previous.activeEngine === next.activeEngine && previous.neuralStatus === next.neuralStatus && previous.customPresets === next.customPresets ? previous : next));
     const unsubAyu = ayuGramEngine.subscribe(setAyuSettings);
     return () => {
       mountedRef.current = false;
+      captureGenerationRef.current++;
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       unsubVoice();
       unsubAyu();
       const recorder = mediaRecorderRef.current;
@@ -423,14 +436,18 @@ export const ChatInput: React.FC<Props> = ({
     }
   };
 
-  const handleStartVoiceRecording = async () => {
+  const handleStartVoiceRecording = async (locked = true) => {
     if (voiceStartingRef.current || isVoiceBusy || pendingVoice || mediaRecorderRef.current?.state === "recording") return;
     if (!canSendMedia) { onNotify?.(sendRestrictionReason || "Voice messages are restricted in this chat."); return; }
     voiceStartingRef.current = true; setIsVoiceBusy(true); setLocalSendError(null);
+    const generation = ++captureGenerationRef.current;
+    setRecordingLocked(locked);
+    setShowExpressionDrawer(false); setShowAttachMenu(false); setShowFormatToolbar(false);
+    textareaRef.current?.blur();
     try {
       if (typeof MediaRecorder === "undefined") throw new Error("This browser cannot record audio. Update it and try again.");
       const ok = await voiceChanger.ensureReadyForCapture();
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || generation !== captureGenerationRef.current) return;
       const stream = voiceChanger.getProcessedOutputStream();
       if (!ok || !stream || stream.getAudioTracks().length === 0) {
         onNotify?.(voiceChanger.getLastError() || 'Microphone unavailable. Check browser permissions.');
@@ -467,6 +484,7 @@ export const ChatInput: React.FC<Props> = ({
         const blobType = chosenMime || recorder.mimeType || 'audio/webm';
         const blob = new Blob(recordedChunksRef.current, { type: blobType });
         setIsRecordingVoice(false);
+        setIsVoiceBusy(true);
         setRecordingSeconds(0);
         if (timerIntervalRef.current) {
           clearInterval(timerIntervalRef.current);
@@ -476,6 +494,7 @@ export const ChatInput: React.FC<Props> = ({
           const msg = 'Voice recording was too short or empty — hold slightly longer to send.';
           setLocalSendError(msg);
           onNotify?.(msg);
+          setIsVoiceBusy(false);
           return;
         }
         const ext = blobType.includes('mp4') ? 'm4a' : blobType.includes('webm') ? 'webm' : 'ogg';
@@ -483,8 +502,9 @@ export const ChatInput: React.FC<Props> = ({
         reader.onload = async () => {
           if (!mountedRef.current) return;
           if (typeof reader.result === 'string') {
-            const activePreset = voiceState.enabled
-              ? BUILTIN_VOICE_PRESETS[voiceState.selectedPresetId as keyof typeof BUILTIN_VOICE_PRESETS]?.name || 'Custom'
+            const currentVoice = voiceChanger.getState();
+            const activePreset = currentVoice.enabled
+              ? currentVoice.selectedPresetId === 'ai_female' && currentVoice.activeEngine !== 'neural' ? 'Woman · lightweight effects' : BUILTIN_VOICE_PRESETS[currentVoice.selectedPresetId as keyof typeof BUILTIN_VOICE_PRESETS]?.name || 'Custom'
               : undefined;
             const voice = { fileDataUrl: reader.result, fileName: "voice_" + Date.now() + "." + ext, duration: elapsedSeconds, presetUsed: activePreset };
             setPendingVoice(voice); setIsVoiceBusy(true);
@@ -494,14 +514,14 @@ export const ChatInput: React.FC<Props> = ({
           }
         };
         reader.onerror = () => {
-          setLocalSendError('Failed to process recorded audio.');
+          setLocalSendError('Failed to process recorded audio.'); setIsVoiceBusy(false);
         };
         reader.readAsDataURL(blob);
       };
 
       recorder.onerror = () => { captureStream.getTracks().forEach(track => track.stop()); if (mountedRef.current) { setIsRecordingVoice(false); setLocalSendError("Recording stopped unexpectedly. Please retry."); } if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
       mediaRecorderRef.current = recorder;
-      recorder.start(100);
+      recorder.start(250);
       setIsRecordingVoice(true);
       setRecordingSeconds(0);
 
@@ -510,16 +530,18 @@ export const ChatInput: React.FC<Props> = ({
         setRecordingSeconds(
           Math.max(0, Math.floor((Date.now() - recordingStartTimeRef.current) / 1000))
         );
-      }, 500);
+      }, 1000);
+      if (holdRef.current?.sendOnReady && !holdRef.current.locked) { holdRef.current = null; recorder.stop(); }
     } catch (err) {
       setIsRecordingVoice(false);
       mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
       const message = (err as Error).message || 'Could not start voice recording.';
       setLocalSendError(message); onNotify?.(message);
-    } finally { voiceStartingRef.current = false; if (mountedRef.current) setIsVoiceBusy(false); }
+    } finally { voiceStartingRef.current = false; if (mountedRef.current && generation === captureGenerationRef.current && mediaRecorderRef.current?.state !== 'inactive') setIsVoiceBusy(false); }
   };
 
   const handleStopAndSendVoice = () => {
+    setIsVoiceBusy(true); holdRef.current = null;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try {
         mediaRecorderRef.current.requestData?.();
@@ -531,6 +553,10 @@ export const ChatInput: React.FC<Props> = ({
   };
 
   const handleCancelVoiceRecording = () => {
+    captureGenerationRef.current++;
+    holdRef.current = null;
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    setIsVoiceBusy(false);
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.onstop = null;
       mediaRecorderRef.current.stop();
@@ -545,6 +571,38 @@ export const ChatInput: React.FC<Props> = ({
     }
   };
 
+  useEffect(() => () => { handleCancelVoiceRecording(); }, [chatId]);
+  useEscapeDismiss(isRecordingVoice || voiceStartingRef.current, handleCancelVoiceRecording);
+  const beginVoiceHold = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || isVoiceBusy || pendingVoice) return;
+    suppressRecordClickRef.current = false;
+    holdRef.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, active: false, locked: false, sendOnReady: false };
+    containerRef.current?.setPointerCapture(event.pointerId);
+    holdTimerRef.current = setTimeout(() => {
+      if (!holdRef.current) return;
+      holdRef.current.active = true; suppressRecordClickRef.current = true;
+      void handleStartVoiceRecording(false);
+    }, 180);
+  };
+  const moveVoiceHold = (event: React.PointerEvent<HTMLDivElement>) => {
+    const hold = holdRef.current;
+    if (!hold || hold.pointer !== event.pointerId || !hold.active || hold.locked) return;
+    const x = event.clientX - hold.x, y = event.clientY - hold.y;
+    if (x < -72 && Math.abs(x) > Math.abs(y)) { handleCancelVoiceRecording(); navigator.vibrate?.(8); }
+    else if (y < -64 && Math.abs(y) > Math.abs(x)) { hold.locked = true; setRecordingLocked(true); navigator.vibrate?.(8); }
+  };
+  const endVoiceHold = (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
+    const hold = holdRef.current;
+    if (!hold || hold.pointer !== event.pointerId) return;
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (cancelled && !hold.locked) { handleCancelVoiceRecording(); return; }
+    if (!hold.active) { holdRef.current = null; suppressRecordClickRef.current = true; void handleStartVoiceRecording(true); return; }
+    if (hold.locked) { holdRef.current = null; return; }
+    if (voiceStartingRef.current) hold.sendOnReady = true;
+    else handleStopAndSendVoice();
+  };
+  useEffect(()=>{setAttachmentFile(null);},[chatId]);
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -567,37 +625,14 @@ export const ChatInput: React.FC<Props> = ({
       return;
     }
 
-    const mediaType: 'photo' | 'video' | 'file' = file.type.startsWith('video/')
-      ? 'video'
-      : file.type.startsWith('image/')
-      ? 'photo'
-      : 'file';
-
     setLocalSendError(null);
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        void Promise.resolve(
-          onSendMessage('', undefined, {
-            fileDataUrl: reader.result,
-            fileName: file.name,
-            mediaType,
-          })
-        ).catch((err: unknown) => {
-          setLocalSendError((err as Error)?.message || 'Failed to send attachment.');
-        });
-      }
-    };
-    reader.onerror = () => {
-      setLocalSendError('Could not read the selected file.');
-    };
-    reader.readAsDataURL(file);
+    setAttachmentFile(file);
     setShowAttachMenu(false);
     e.target.value = '';
   };
 
   const activePresetName = voiceState.enabled
-    ? BUILTIN_VOICE_PRESETS[voiceState.selectedPresetId as keyof typeof BUILTIN_VOICE_PRESETS]?.name || 'Custom'
+    ? voiceState.selectedPresetId === 'ai_female' && voiceState.activeEngine !== 'neural' ? 'Woman · lightweight effects' : BUILTIN_VOICE_PRESETS[voiceState.selectedPresetId as keyof typeof BUILTIN_VOICE_PRESETS]?.name || 'Custom'
     : null;
 
   const filteredBotCommands =
@@ -646,6 +681,9 @@ export const ChatInput: React.FC<Props> = ({
   return (
     <div
       ref={containerRef}
+      onPointerMove={moveVoiceHold}
+      onPointerUp={event => endVoiceHold(event)}
+      onPointerCancel={event => endVoiceHold(event, true)}
       className="tg-composer relative bg-surface dark:bg-surface border-t border-outline dark:border-outline text-ink dark:text-ink shrink-0 select-none"
     >
       {/* Exact Send Failure / Restriction Reason Alert Banner */}
@@ -691,6 +729,7 @@ export const ChatInput: React.FC<Props> = ({
         </div>
       )}
 
+      {attachmentFile && <AttachmentPreview key={attachmentFile.name+attachmentFile.lastModified} file={attachmentFile} allowTimer={!isChannel && !chatId.startsWith('-')} onClose={()=>setAttachmentFile(null)} onSend={(caption,media)=>onSendMessage(caption,undefined,media)} />}
       {pendingVoice && <div className="tg-voice-retry"><audio controls playsInline src={pendingVoice.fileDataUrl} /><div><span className="text-muted text-xs">{isVoiceBusy ? "Sending voice…" : "Voice note kept for retry"}</span><button type="button" disabled={isVoiceBusy} onClick={() => setPendingVoice(null)}>Discard</button><button type="button" disabled={isVoiceBusy} onClick={async () => { setIsVoiceBusy(true); try { const sent = await onSendMessage("", pendingVoice); if (sent !== false && mountedRef.current) setPendingVoice(null); } catch (error) { setLocalSendError((error as Error).message); } finally { if (mountedRef.current) setIsVoiceBusy(false); } }}>Retry voice</button></div></div>}
       {/* Reply / Edit Context Strip (Matches Official Telegram Bar above Composer) */}
       {(replyingTo || editingMessage) && (
@@ -774,45 +813,7 @@ export const ChatInput: React.FC<Props> = ({
 
       {/* Main Native Telegram Floating Pill Composer Row */}
       {isRecordingVoice ? (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 animate-tg-pop-in">
-          <div className="flex-1 flex items-center gap-2.5 px-4 py-2 rounded-[24px] bg-elevated dark:bg-canvas border border-rose-500/35">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
-            <span className="text-sm font-mono font-semibold text-rose-500 tabular-nums shrink-0">
-              {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
-            </span>
-            <div className="flex items-center gap-0.5 h-4 flex-1 max-w-[110px]" aria-hidden="true">
-              {[45, 80, 60, 95, 50, 85, 40, 75, 90, 55, 70, 45].map((h, i) => (
-                <span
-                  key={i}
-                  style={{ height: `${h}%`, animationDelay: `${i * 70}ms` }}
-                  className="flex-1 rounded-full bg-rose-500/75 animate-pulse"
-                />
-              ))}
-            </div>
-            <span className="text-xs text-muted dark:text-muted truncate">
-              Recording voice...
-            </span>
-            {voiceState.enabled && (
-              <span className="ml-auto text-[11px] text-primary font-semibold shrink-0">{activePresetName}</span>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={handleCancelVoiceRecording}
-            className="px-3 py-2 text-xs font-semibold text-rose-500 dark:text-rose-400 hover:bg-rose-500/10 rounded-full cursor-pointer transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleStopAndSendVoice}
-            className="w-11 h-11 bg-primary hover:bg-primary-hover active:scale-95 text-white rounded-full flex items-center justify-center cursor-pointer shadow-md shrink-0 transition-transform"
-            title="Send Voice Message"
-          >
-            <Send className="w-4.5 h-4.5 translate-x-[0.5px]" />
-          </button>
-        </div>
+        <VoiceRecordingBar seconds={recordingSeconds} locked={recordingLocked} preset={activePresetName} onCancel={handleCancelVoiceRecording} onSend={handleStopAndSendVoice} />
       ) : (
         <div className="tg-composer-row">
           {/* Official Telegram Rounded Pill Input Container */}
@@ -1047,7 +1048,9 @@ export const ChatInput: React.FC<Props> = ({
               type="button"
               disabled={isVoiceBusy || Boolean(pendingVoice)}
               aria-label={isVoiceBusy ? "Starting microphone" : voiceState.enabled ? "Record Voice (" + activePresetName + ")" : "Record Voice Message"}
-              onClick={handleStartVoiceRecording}
+              onPointerDown={beginVoiceHold}
+              onContextMenu={event => event.preventDefault()}
+              onClick={() => { if (suppressRecordClickRef.current) { suppressRecordClickRef.current = false; return; } void handleStartVoiceRecording(true); }}
               className="tg-composer-mic w-11 h-11 rounded-full bg-primary text-on-primary flex items-center justify-center shrink-0 cursor-pointer"
               title={voiceState.enabled ? `Record Voice (${activePresetName})` : 'Record Voice Message'}
             >

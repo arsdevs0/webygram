@@ -1,3 +1,6 @@
+import { startMediaReceipt } from '../utils/mediaReceipt';
+import {outboxReadReached} from '../utils/readReceipt';
+import { previewText } from '../utils/messagePreview';
 import { showMessageNotification } from './notificationSettingsStore';
 import { mergeMessagePage } from '../utils/messageMerge';
 import { appFetch as fetch, createAppSocket } from './appTransport';
@@ -67,6 +70,7 @@ export interface QrStatusResponse {
 }
 
 export interface TargetGroupInfo {
+  autoSaveSources?: {mode:'all'|'single'|'multiple';chatIds:string[];enabled:boolean;includeDetails:boolean};
   id: string;
   title: string;
   username?: string;
@@ -604,7 +608,8 @@ export class TelegramService {
           ...existing,
           unreadCount: nextUnread,
           lastMessage: {
-            text: summaryText,
+            text: previewText(msg.text,msg.media),
+            id: msg.id, media: msg.media, isPending: msg.isPending,
             timestamp: msg.timestamp,
             senderName: msg.senderName,
             isOutgoing: msg.isOutgoing,
@@ -683,17 +688,23 @@ export class TelegramService {
       return;
     }
 
+    if (type === 'MEDIA_CONTENTS_READ') {
+      const chatId = String(data.chatId || '');
+      this.applyMediaContentsRead(chatId, (data.messageIds as string[]) || [], Number(data.readAt) || Date.now());
+      return;
+    }
+
     if (type === 'READ_OUTBOX') {
       const chatId = String(data.chatId || '');
       const maxId = Number(data.maxId || 0);
       if (chatId && maxId > 0) {
         if (this.messages[chatId]) {
           this.messages[chatId] = this.messages[chatId].map((m) =>
-            m.isOutgoing && Number(m.id) <= maxId ? { ...m, isRead: true } : m
+            outboxReadReached(m,maxId) ? { ...m, isRead: true } : m
           );
         }
         const chatIdx = this.chats.findIndex((c) => c.id === chatId);
-        if (chatIdx !== -1 && this.chats[chatIdx].lastMessage?.isOutgoing) {
+        if (chatIdx !== -1 && this.chats[chatIdx].lastMessage && outboxReadReached(this.chats[chatIdx].lastMessage!,maxId)) {
           const nextChats = [...this.chats];
           nextChats[chatIdx] = {
             ...nextChats[chatIdx],
@@ -1512,6 +1523,7 @@ export class TelegramService {
     mediaType?: 'photo' | 'video' | 'voice' | 'file';
     voiceDuration?: number;
     ttlSeconds?: number;
+    width?:number; height?:number; spoiler?:boolean; silent?:boolean;
   }): Promise<TelegramMessage | null> {
     if (!this.authSession.isConnected) {
       const restored = await this.ensureSessionActive();
@@ -1555,6 +1567,7 @@ export class TelegramService {
                 senderName: repliedTarget.senderName || 'User',
                 text: repliedTarget.text || (repliedTarget.media ? `[${repliedTarget.media.type}]` : 'Media'),
                 mediaType: repliedTarget.media?.type,
+                thumbnailUrl: repliedTarget.media?.inlineThumb || repliedTarget.media?.thumbnailUrl,
               },
             }
           : {}),
@@ -1581,7 +1594,8 @@ export class TelegramService {
           ...nextChats[chatIdxPre],
           draftText: '',
           lastMessage: {
-            text: params.text || (params.mediaType ? `[${params.mediaType}]` : 'Sending...'),
+            text: previewText(params.text, optimisticMsg.media),
+            id: tempId, media: optimisticMsg.media, isPending: true,
             timestamp: nowTs,
             senderName: 'You',
             isOutgoing: true,
@@ -1606,7 +1620,8 @@ export class TelegramService {
       mediaType: params.mediaType,
       duration: params.voiceDuration,
       ttlSeconds: params.ttlSeconds,
-      silent: ayu.sendWithoutSound,
+      silent: params.silent ?? ayu.sendWithoutSound,
+      width:params.width,height:params.height,spoiler:params.spoiler,
     });
 
     try {
@@ -1668,7 +1683,8 @@ export class TelegramService {
           ...nextChats[chatIdxPost],
           draftText: '',
           lastMessage: {
-            text: params.text || (params.mediaType ? `[${params.mediaType}]` : 'Sent'),
+            text: previewText(sent.text,sent.media),
+            id: sent.id, media: sent.media, isPending: false,
             timestamp: sent.timestamp,
             senderName: 'You',
             isOutgoing: true,
@@ -1767,33 +1783,38 @@ export class TelegramService {
     this.notify();
   }
 
+  private seenRequests = new Map<string, Promise<boolean>>();
+  private applyMediaContentsRead(chatId: string, ids: string[], readAt: number) {
+    const selected = new Set(ids);
+    const update = (message: TelegramMessage) => selected.has(message.id) && message.media
+      ? { ...message, media: startMediaReceipt(message.media, readAt) } : message;
+    if (this.messages[chatId]) this.messages[chatId] = this.messages[chatId].map(update);
+    const shared = this.sharedMediaByChat[chatId];
+    if (shared) for (const filter of Object.keys(shared) as Array<keyof typeof shared>) shared[filter] = shared[filter]?.map(update);
+    this.chats = this.chats.map(chat => chat.id === chatId && chat.lastMessage?.id && selected.has(chat.lastMessage.id) && chat.lastMessage.media
+      ? { ...chat, lastMessage: { ...chat.lastMessage, media: startMediaReceipt(chat.lastMessage.media, readAt) } } : chat);
+    this.notify();
+  }
   public async markMessageAsSeenToSender(chatId: string, messageId: string): Promise<boolean> {
-    try {
-      const res = await fetch('/api/tg/messages/mark-seen', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, messageId }),
-      });
-      if (!res.ok) return false;
-      const msg = this.messages[chatId]?.find((m) => m.id === messageId);
-      if (msg) {
-        msg.isRead = true;
-        if (msg.media) {
-          msg.media.viewed = true;
+    const key = chatId + ':' + messageId;
+    const pending = this.seenRequests.get(key);
+    if (pending) return pending;
+    const request = (async () => {
+      try {
+        const res = await fetch('/api/tg/messages/mark-seen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId, messageId }) });
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (!data.ok || !data.contentsSeen) return false;
+        this.applyMediaContentsRead(chatId, [messageId], Number(data.readAt) || Date.now());
+        if (data.historyRead) {
+          const maxId = Number(messageId);
+          this.messages[chatId] = (this.messages[chatId] || []).map(message => !message.isOutgoing && Number(message.id) <= maxId ? { ...message, isRead: true } : message);
         }
-      }
-      this.recordChatSeenLocally(chatId);
-      const chat = this.chats.find((c) => c.id === chatId);
-      if (chat) {
-        chat.unreadCount = 0;
-        if (chat.lastMessage) chat.lastMessage.isRead = true;
-      }
-      soundEffects.playPop();
-      this.notify();
-      return true;
-    } catch {
-      return false;
-    }
+        soundEffects.playPop(); this.notify(); return true;
+      } catch { return false; }
+    })();
+    this.seenRequests.set(key, request);
+    try { return await request; } finally { this.seenRequests.delete(key); }
   }
 
   public async forwardMessage(
@@ -1832,6 +1853,7 @@ export class TelegramService {
   }
 
   public async forwardAllMediaToTargetGroup(params: {
+    includeDetails?: boolean;
     fromChatId: string;
     targetLink?: string;
     targetChatId?: string;
@@ -1847,13 +1869,6 @@ export class TelegramService {
     total: number;
     targetTitle: string;
   }> {
-    // Ensure source group's photo & video gallery is rendered first before bulk sending
-    if (!this.sharedMediaByChat[params.fromChatId]?.media?.length) {
-      await this.loadChatSharedMedia(params.fromChatId, 'media', false, 2).catch(() => {});
-    } else {
-      void this.loadChatSharedMedia(params.fromChatId, 'media', false, 4);
-    }
-
     const res = await fetch('/api/tg/messages/forward-all-media', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1872,6 +1887,17 @@ export class TelegramService {
     return data;
   }
 
+  public async configureVaultSources(config:{mode:'all'|'single'|'multiple';chatIds:string[];enabled:boolean;includeDetails:boolean}):Promise<{count:number;enabled:boolean}> {
+    const response=await fetch('/api/tg/auto-forward/sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});const result=await response.json();if(!response.ok)throw new Error(result.error || 'Could not save vault sources');await this.loadTargetGroup();await this.loadAutoForwardRules();return result;
+  }
+  public async reportMessage(chatId:string,messageId:string,option='',comment=''):Promise<any> {
+    const response=await fetch('/api/tg/messages/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chatId,messageId,option,comment})});
+    const result=await response.json();if(!response.ok)throw new Error(result.error || 'Could not report message');return result;
+  }
+  public async getMessageReceipt(chatId:string,messageId:string):Promise<any> {
+    const response=await fetch('/api/tg/messages/'+encodeURIComponent(chatId)+'/'+encodeURIComponent(messageId)+'/receipt');
+    const result=await response.json();if(!response.ok)throw new Error(result.error || 'Could not load read information');return result;
+  }
   public async resetSentMediaHistory(fromChatId?: string): Promise<void> {
     const qs = fromChatId ? `?fromChatId=${encodeURIComponent(fromChatId)}` : '';
     const res = await fetch(`/api/tg/target-group/sent-history${qs}`, { method: 'DELETE' });
@@ -1894,7 +1920,7 @@ export class TelegramService {
           ...existing,
           unreadCount: 0,
           lastMessage: existing.lastMessage
-            ? { ...existing.lastMessage, isRead: true }
+            ? { ...existing.lastMessage, isRead: existing.lastMessage.isOutgoing ? existing.lastMessage.isRead : true }
             : undefined,
         };
         this.chats = nextChats;
@@ -2024,12 +2050,8 @@ export class TelegramService {
   }
 
   public markMediaAsViewed(chatId: string, messageId: string) {
-    const msg = this.messages[chatId]?.find((m) => m.id === messageId);
-    if (msg && msg.media && msg.media.isDisappearing && !msg.media.viewed) {
-      msg.media.viewed = true;
-      msg.media.expiresAt = Date.now() + (msg.media.expireSeconds || 5) * 1000;
-      this.notify();
-    }
+    const message = this.messages[chatId]?.find(item => item.id === messageId);
+    if (message?.media && !message.media.expiresAt) this.applyMediaContentsRead(chatId, [messageId], Date.now());
   }
 
   public markMediaExpired(chatId: string, messageId: string) {

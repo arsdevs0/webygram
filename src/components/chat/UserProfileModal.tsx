@@ -289,14 +289,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 {(
 
                   <div
-                    onClick={() => { if (profile.phone) copyValue(`+${profile.phone}`, 'Phone'); }}
+                    onClick={() => { if (profile.phone) copyValue('+' + profile.phone.replace(/^\+/, ''), 'Phone'); }}
                     className="flex items-center justify-between gap-3 cursor-pointer hover:bg-hover dark:hover:bg-white/[0.03] -mx-2 px-2 py-1.5 rounded-lg transition-colors"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
                       <Phone size={19} className="text-muted dark:text-muted shrink-0" />
                       <div className="min-w-0">
                         <p className="text-[14px] font-medium truncate">
-                          {profile.phone ? '+' + profile.phone : 'Unknown'}
+                          {profile.phone ? '+' + profile.phone.replace(/^\+/, '') : 'Not shared by Telegram'}
                         </p>
                         <span className="text-[11px] text-muted dark:text-muted">Phone</span>
                       </div>

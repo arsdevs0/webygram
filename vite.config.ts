@@ -7,7 +7,9 @@ import { browserEnginePlugin } from './scripts/browser-engine-plugin.mjs';
 export default defineConfig(() => {
   return {
     plugins: [browserEnginePlugin(import.meta.dirname), react(), tailwindcss()],
+    worker: { format: 'es' as const },
     resolve: {
+      conditions: ['onnxruntime-web-use-extern-wasm', 'module', 'browser', 'development|production'],
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),
         'node:fs': path.resolve(import.meta.dirname, 'src/browser/storage.ts'),

@@ -1,7 +1,11 @@
+import { mediaSecondsRemaining, VIEW_ONCE_SECONDS } from '../../utils/mediaReceipt';
+import { previewText } from '../../utils/messagePreview';
+import { MessageStatus } from './MessageStatus';
+import { ReportMessageModal } from './ReportMessageModal';
 import { useNearViewport } from '../common/useNearViewport';
 import { mediaRetrySource } from '../../utils/mediaRetrySource';
 import { SharedMediaTile } from './SharedMediaTile';
-import { readableAccent } from '../../themes/themeTokens';
+import { readableText, readableAccent } from '../../themes/themeTokens';
 import { ChatPhoto } from './ChatPhoto';
 import { useEscapeDismiss } from '../common/useEscapeDismiss';
 import { createPortal } from 'react-dom';
@@ -128,7 +132,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
   onOpenForwardPicker,
   onOpenComments,
   onBotSwitchInline,
-  onOpenMedia,
+  onOpenMedia: openMedia,
   onReply,
   onEdit,
   onOpenChatByLink,
@@ -182,7 +186,16 @@ export const MessageItem: React.FC<Props> = React.memo(({
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const nearViewport = useNearViewport(bubbleRef, Boolean(message.media), false);
   useEffect(() => { for (const video of bubbleRef.current?.querySelectorAll('video[data-autoplay-preview]') || []) { if (nearViewport && modSettingsStore.getSettings().autoPlayGifs !== false) void (video as HTMLVideoElement).play().catch(() => {}); else (video as HTMLVideoElement).pause(); } }, [nearViewport]);
+  const mediaTapTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  const pressTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  useEffect(()=>()=>{clearTimeout(mediaTapTimer.current);clearTimeout(pressTimer.current);},[]);
+  const onOpenMedia=(media:MediaAttachment,id:string)=>{if(mediaTapTimer.current){clearTimeout(mediaTapTimer.current);mediaTapTimer.current=undefined;onStartSelection?.(message.id);return;}mediaTapTimer.current=setTimeout(()=>{mediaTapTimer.current=undefined;openMedia(media,id);},250);};
   const lastTapRef = useRef<number>(0);
+  const gesture=useRef<{x:number;y:number;pointer:number}|null>(null);
+  const suppressClick=useRef(false);
+  const [swipeOffset,setSwipeOffset]=useState(0);
+  const [reporting,setReporting]=useState(false);
+  const [receiptNotice,setReceiptNotice]=useState('');
   const timerRef = useRef<number | null>(null);
   const imageAutoRetriedRef = useRef(false);
   const autoRetryTimerRef = useRef<number | null>(null);
@@ -261,7 +274,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
     }
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
-      void telegramService.toggleReaction(chatId, message.id, modSettings.doubleTapReaction || '👍');
+      clearTimeout(mediaTapTimer.current);mediaTapTimer.current=undefined;onStartSelection?.(message.id);
       lastTapRef.current = 0;
     } else {
       lastTapRef.current = now;
@@ -399,6 +412,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
     const ok = await telegramService.markMessageAsSeenToSender(chatId, message.id);
     if (ok) {
       setMarkedSeenSent(true);
+      if (message.media?.isDisappearing) openMedia(telegramService.getMessages(chatId).find(item => item.id === message.id)?.media || message.media, message.id);
       onNotify?.('Marked as seen on Telegram ✓');
     } else {
       onNotify?.('Could not send seen receipt');
@@ -410,48 +424,24 @@ export const MessageItem: React.FC<Props> = React.memo(({
     e?.stopPropagation();
     if (!message.media) return;
     setShowTimerChoice(false);
-    if (ayuSettings.markSeenOnTimerClick && !markedSeenSent) {
-      void telegramService.markMessageAsSeenToSender(chatId, message.id).then((ok) => {
-        if (ok) setMarkedSeenSent(true);
-      });
-    }
-    if (countdownRemaining === null) {
-      handleTriggerDisappearingCountdown();
-    }
     onOpenMedia(message.media, message.id);
   };
 
-  const handleTriggerDisappearingCountdown = () => {
-    if (!message.media) return;
-    if (hasBurned || message.media.isExpired) return;
-    if (countdownRemaining !== null) {
-      return;
-    }
-
-    const totalSecs = message.media.expireSeconds || 5;
-    setCountdownRemaining(totalSecs);
-    soundEffects.playPop();
-
-    if (ayuSettings.autoSaveExpiringToSavedMessages) {
-      void telegramService.saveMediaToVault(chatId, message.id, chatTitle);
-    }
-
-    timerRef.current = window.setInterval(() => {
-      setCountdownRemaining((prev) => {
-        if (prev === null || prev <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          const currentAyu = ayuGramEngine.getSettings();
-          if (currentAyu.preventTTLExpiration) {
-            return 0;
-          }
-          setHasBurned(true);
-          telegramService.markMediaExpired(chatId, message.id);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
+  useEffect(() => {
+    setMarkedSeenSent(Boolean(message.media?.viewed));
+    setHasBurned(Boolean(message.media?.isExpired));
+    const tick = () => {
+      const remaining = mediaSecondsRemaining(message.media);
+      setCountdownRemaining(remaining);
+      if (remaining === 0 && !ayuGramEngine.getSettings().preventTTLExpiration) {
+        setHasBurned(true); telegramService.markMediaExpired(chatId, message.id);
+      }
+    };
+    tick();
+    if (!message.media?.expiresAt || message.media?.isExpired) return;
+    const timer = window.setInterval(tick, 500);
+    return () => clearInterval(timer);
+  }, [chatId, message.id, message.media?.expiresAt, message.media?.isExpired, message.media?.viewed]);
 
   const handleTimerMediaCardClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -615,13 +605,24 @@ export const MessageItem: React.FC<Props> = React.memo(({
               onToggleSelect?.(message.id);
               return;
             }
-            handleBubbleClick();
+            if (!suppressClick.current) handleBubbleClick();
           }}
+          onClickCapture={e=>{if(suppressClick.current){e.preventDefault();e.stopPropagation();suppressClick.current=false;}}}
+          onDoubleClick={e=>{e.preventDefault();if(!selectionMode)onStartSelection?.(message.id);}}
+          onPointerDown={e=>{if(selectionMode || e.button!==0 || (e.target as HTMLElement).closest('input,textarea,audio,video,input,[data-message-controls]'))return;suppressClick.current=false;gesture.current={x:e.clientX,y:e.clientY,pointer:e.pointerId};if(e.pointerType==='touch')pressTimer.current=setTimeout(()=>{suppressClick.current=true;gesture.current=null;setShowActionsMenu(true);navigator.vibrate?.(8);},450);}}
+          onPointerMove={e=>{const a=gesture.current;if(!a)return;const dx=e.clientX-a.x,dy=e.clientY-a.y;if(Math.abs(dx)>10 || Math.abs(dy)>10)clearTimeout(pressTimer.current);if(Math.abs(dy)>30 && Math.abs(dy)>Math.abs(dx)){gesture.current=null;setSwipeOffset(0);return;}if(dx<-12 && Math.abs(dx)>Math.abs(dy)*1.5){e.currentTarget.setPointerCapture(e.pointerId);setSwipeOffset(Math.max(-80,dx));}}}
+          onPointerUp={e=>{clearTimeout(pressTimer.current);const a=gesture.current;gesture.current=null;if(a && e.clientX-a.x<-58 && Math.abs(e.clientY-a.y)<40){suppressClick.current=true;clearTimeout(mediaTapTimer.current);mediaTapTimer.current=undefined;onReply(message);navigator.vibrate?.(8);}setSwipeOffset(0);}}
+          onPointerCancel={()=>{clearTimeout(pressTimer.current);gesture.current=null;setSwipeOffset(0);}}
           style={
             !isStickerOnly && (modSettings.bubbleStyle === 'telegram' || !modSettings.bubbleStyle)
               ? {
                   backgroundColor: isOut ? 'var(--tg-bubble-out, #2B5278)' : undefined,
-                }
+                  transform:swipeOffset? 'translateX('+swipeOffset+'px)' : undefined,
+                  touchAction:'pan-y',
+                  '--message-ink':readableText(activePalette.text || '#ffffff',[isOut?activePalette.bubbleOut:activePalette.bubbleIn]),
+                  '--message-muted':readableText(activePalette.muted || '#92a5b2',[isOut?activePalette.bubbleOut:activePalette.bubbleIn]),
+                  '--message-accent':readableAccent(modSettingsStore.getActiveAccentHex(),isOut?activePalette.bubbleOut:activePalette.bubbleIn,readableText(activePalette.text || '#ffffff',[isOut?activePalette.bubbleOut:activePalette.bubbleIn])),
+                } as React.CSSProperties
               : undefined
           }
           className={`relative ${
@@ -690,6 +691,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                   isDarkOut ? 'bg-primary' : isOut ? 'bg-primary' : 'bg-primary'
                 }`}
               />
+              {message.replyTo.thumbnailUrl && <img src={message.replyTo.thumbnailUrl} className="tg-reply-thumb" alt="" loading="lazy"/>}
               <div className="min-w-0 flex-1">
                 <span
                   className={`font-semibold block text-[11.5px] truncate ${
@@ -713,7 +715,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                       {message.replyTo.text && !message.replyTo.text.startsWith('[') ? ' · ' : ''}
                     </span>
                   )}
-                  <span className="truncate">{message.replyTo.text || 'Media'}</span>
+                  <span className="truncate">{previewText(message.replyTo.text,message.replyTo.mediaType ? {type:message.replyTo.mediaType as MediaAttachment['type']} : undefined)}</span>
                 </span>
               </div>
             </div>
@@ -769,7 +771,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                   <div className="w-12 h-12 rounded-full bg-black/65 backdrop-blur-md border border-white/25 text-white flex flex-col items-center justify-center shadow-lg">
                     <Flame className="w-4.5 h-4.5 text-amber-400 fill-amber-400/20" />
                     <span className="text-[10px] font-bold font-mono tabular-nums">
-                      {countdownRemaining !== null ? `${countdownRemaining}s` : `${message.media.expireSeconds || 5}s`}
+                      {countdownRemaining !== null ? `${countdownRemaining}s` : message.media.expireSeconds === VIEW_ONCE_SECONDS ? '1×' : `${message.media.expireSeconds || 5}s`}
                     </span>
                   </div>
                   <span className="text-[11px] font-semibold text-white bg-black/60 backdrop-blur-xs px-2.5 py-0.5 rounded-full border border-white/10">
@@ -780,7 +782,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                 {/* Sleek 1-Line Action Pill Bar */}
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="px-2.5 py-2 bg-canvas/95 border-t border-white/10 flex items-center justify-between gap-1.5"
+                  className="tg-timed-actions"
                 >
                   <button
                     type="button"
@@ -801,7 +803,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                       }`}
                     >
                       <Eye className="w-3 h-3" />
-                      <span>{markingSeenBusy ? '...' : markedSeenSent ? 'Seen ✓' : 'Mark Seen'}</span>
+                      <span>{markingSeenBusy ? '...' : markedSeenSent ? 'Opened' : 'Mark seen'}</span>
                     </button>
                   )}
                   {ayuSettings.saveDisappearingMedia && (
@@ -878,7 +880,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                   <div className="w-12 h-12 rounded-full bg-black/65 backdrop-blur-md border border-white/25 text-white flex flex-col items-center justify-center shadow-lg">
                     <Flame className="w-4.5 h-4.5 text-amber-400 fill-amber-400/20" />
                     <span className="text-[10px] font-bold font-mono tabular-nums">
-                      {countdownRemaining !== null ? `${countdownRemaining}s` : `${message.media.expireSeconds || 5}s`}
+                      {countdownRemaining !== null ? `${countdownRemaining}s` : message.media.expireSeconds === VIEW_ONCE_SECONDS ? '1×' : `${message.media.expireSeconds || 5}s`}
                     </span>
                   </div>
                   <span className="text-[11px] font-semibold text-white bg-black/60 backdrop-blur-xs px-2.5 py-0.5 rounded-full border border-white/10">
@@ -888,7 +890,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
 
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="px-2.5 py-2 bg-canvas/95 border-t border-white/10 flex items-center justify-between gap-1.5"
+                  className="tg-timed-actions"
                 >
                   <button
                     type="button"
@@ -909,7 +911,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
                       }`}
                     >
                       <Eye className="w-3 h-3" />
-                      <span>{markingSeenBusy ? '...' : markedSeenSent ? 'Seen ✓' : 'Mark Seen'}</span>
+                      <span>{markingSeenBusy ? '...' : markedSeenSent ? 'Opened' : 'Mark seen'}</span>
                     </button>
                   )}
                   {ayuSettings.saveDisappearingMedia && (
@@ -1627,21 +1629,16 @@ export const MessageItem: React.FC<Props> = React.memo(({
 
             {isOut && (
               <span className={isDarkOut ? 'text-muted' : 'text-primary'}>
-                {message.isPending ? (
-                  <Clock className="w-3 h-3 opacity-80" />
-                ) : message.isRead ? (
-                  <CheckCheck className={`w-3.5 h-3.5 ${isDarkOut ? 'text-primary' : 'text-primary'}`} />
-                ) : (
-                  <Check className="w-3.5 h-3.5 opacity-80" />
-                )}
+                <MessageStatus pending={message.isPending} read={message.isRead} viewed={message.media?.viewed}/>
               </span>
             )}
           </div>
         )}
 
+        {swipeOffset < -25 && <span className="tg-swipe-reply" aria-hidden="true"><Reply size={20}/></span>}
         {/* Hover Actions */}
         <div
-          className={`absolute top-0 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-20 flex items-center gap-0.5 bg-surface dark:bg-elevated border border-outline dark:border-outline rounded-full px-1.5 py-0.5 shadow-sm ${
+          data-message-controls="true" className={`absolute top-0 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-20 flex items-center gap-0.5 bg-surface dark:bg-elevated border border-outline dark:border-outline rounded-full px-1.5 py-0.5 shadow-sm ${
             isOut ? 'right-2' : 'left-2'
           }`}
         >
@@ -1765,6 +1762,7 @@ export const MessageItem: React.FC<Props> = React.memo(({
           </div>
         )}
 
+        {reporting && <ReportMessageModal chatId={chatId} messageId={message.id} onClose={()=>setReporting(false)} onNotify={onNotify}/>}
         {/* Actions Menu */}
         {showActionsMenu && createPortal(
           <div ref={actionMenuRef} aria-label="Message actions" style={actionPosition} onClick={e => e.stopPropagation()} className="tg-message-actions fixed z-[80] w-56 max-h-[calc(100dvh-24px)] overflow-y-auto bg-surface dark:bg-elevated border border-outline dark:border-outline rounded-xl shadow-lg py-1 text-sm text-ink dark:text-ink">
@@ -1782,6 +1780,10 @@ export const MessageItem: React.FC<Props> = React.memo(({
                 <span className="truncate">View {message.senderName || 'Sender'} Profile</span>
               </button>
             )}
+            <button type="button" onClick={()=>{setShowActionsMenu(false);onReply(message);}} className="tg-action-row"><Reply size={17}/>Reply</button>
+            {!isOut && <button type="button" onClick={()=>{setShowActionsMenu(false);setReporting(true);}} className="tg-action-row">Report message</button>}
+            {isOut && !message.isPending && <button type="button" className="tg-action-row" onClick={async()=>{try{const data=await telegramService.getMessageReceipt(chatId,message.id);setReceiptNotice(data.readAt ? 'Read '+new Date(data.readAt*1000).toLocaleString() : data.note || 'Sent to Telegram');}catch(error){setReceiptNotice((error as Error).message);}}}>Message info</button>}
+            {receiptNotice && <p role="status" className="px-3 py-2 text-xs text-muted">{receiptNotice}</p>}
             {!isOut && (
               <button
                 type="button"

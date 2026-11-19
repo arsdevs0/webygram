@@ -1,0 +1,51 @@
+{
+  "sampleRate": 16000,
+  "chunkSamples": 832,
+  "contextSamples": 32,
+  "inputShapes": {
+    "audio": [
+      1,
+      1,
+      864
+    ],
+    "encoder": [
+      1,
+      512,
+      510
+    ],
+    "decoder": [
+      1,
+      2,
+      13,
+      256
+    ],
+    "output": [
+      1,
+      512,
+      4
+    ],
+    "prenet": [
+      1,
+      1,
+      24
+    ]
+  },
+  "modelBytes": 13533429,
+  "maxError": 5.774199962615967E-08,
+  "snrDb": 109.76211847474138,
+  "firstMaxError": 2.8870999813079834E-08,
+  "stateMaxErrors": [
+    2.4318695068359375E-05,
+    2.1457672119140625E-05,
+    1.1175870895385742E-07,
+    8.940696716308594E-08
+  ],
+  "p50ms": 8.251499966718256,
+  "p95ms": 9.141339990310371,
+  "budgetMs": 52.0,
+  "source": {
+    "sha": "ebfe8c0fdeb974a7eeb463b3abbc8ce42a0e3851",
+    "license": "mit"
+  },
+  "sha256": "794b7251fb60177b6ca4ca2598234e553911c1314d7b2c9c7330e4a7ca30588e"
+}

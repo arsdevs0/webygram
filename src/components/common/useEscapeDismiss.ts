@@ -3,7 +3,7 @@ import { createBackNavigation } from '../../utils/backNavigation';
 let navigation: ReturnType<typeof createBackNavigation> | undefined;
 function getNavigation() {
   return navigation ??= createBackNavigation({
-    history: window.history,
+    history: window.history, now: () => Date.now(),
     listen: (type, callback) => {
       window.addEventListener(type, callback, type === 'keydown');
       return () => window.removeEventListener(type, callback, type === 'keydown');
@@ -24,10 +24,10 @@ export function useEscapeDismiss(open: boolean, onClose?: () => void) {
     };
   }, [open]);
 }
-export function useAppBack(enabled: boolean, onBack: () => void, onExitHint?: () => void) {
+export function useAppBack(enabled: boolean, onBack: () => void, onExitHint?: (remaining?: number) => void) {
   const backRef = useRef(onBack); backRef.current = onBack;
   const hintRef = useRef(onExitHint); hintRef.current = onExitHint;
-  useLayoutEffect(() => { getNavigation().setExitProtection(() => hintRef.current?.()); }, []);
+  useLayoutEffect(() => { getNavigation().setExitProtection(remaining => hintRef.current?.(remaining), { rapidExitTaps: 4 }); }, []);
   useLayoutEffect(() => { getNavigation().setFallback(enabled ? () => backRef.current() : undefined); });
   useLayoutEffect(() => () => getNavigation().setFallback(undefined), []);
 }

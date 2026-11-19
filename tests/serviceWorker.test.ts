@@ -3,12 +3,14 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 
-function worker(client: any, nativeFetch: any = fetch) {
+function worker(client: any, nativeFetch: any = fetch, entries = new Map<string, Response>()) {
   const handlers: Record<string, (event: any) => void> = {};
   const self = { location: new URL('https://app.test/'), addEventListener: (name: string, handler: any) => handlers[name] = handler,
     clients: { get: async () => client, matchAll: async () => client ? [client] : [] } };
   vm.runInNewContext(readFileSync(new URL('../public/telegram-sw.js', import.meta.url), 'utf8'), {
     self, URL, Response, ReadableStream, MessageChannel, setTimeout, clearTimeout, fetch: nativeFetch,
+    caches: { match: async (key: Request | string) => entries.get(typeof key === 'string' ? key : key.url)?.clone(),
+      open: async () => ({ put: async (key: Request | string, value: Response) => entries.set(typeof key === 'string' ? key : key.url, value.clone()) }) },
   });
   return (request: Request): Promise<Response> | undefined => {
     let response: Promise<Response> | undefined;
@@ -35,11 +37,20 @@ test('service worker relays ranges and streams every media chunk from the open p
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.concat(chunks));
 });
 
-test('service worker leaves assets, other origins and POST requests alone', () => {
+test('service worker leaves other origins, unrecognized assets and POST requests alone', () => {
   const relay = worker(null);
-  assert.equal(relay(new Request('https://app.test/assets/app.js')), undefined);
+  assert.equal(relay(new Request('https://app.test/unknown.txt')), undefined);
   assert.equal(relay(new Request('https://telegram.org/api/test')), undefined);
   assert.equal(relay(new Request('https://app.test/api/test', { method: 'POST', body: '{}' })), undefined);
+});
+
+test('service worker caches public app assets and serves the cached copy offline', async () => {
+  let requests = 0;
+  const relay = worker(null, async () => { requests++; return new Response('public asset'); });
+  const request = new Request('https://app.test/assets/app.js');
+  assert.equal(await (await relay(request))!.text(), 'public asset');
+  assert.equal(await (await relay(request))!.text(), 'public asset');
+  assert.equal(requests, 1);
 });
 
 test('service worker reports closed app and supports switching back to Node mode', async () => {

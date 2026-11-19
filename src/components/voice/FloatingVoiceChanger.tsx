@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { voiceChanger, BUILTIN_VOICE_PRESETS } from '../../services/voiceChangerEngine';
 import { VoiceChangerState, VoiceGender } from '../../types/voiceChanger';
+import { VoiceEngineStatus } from './VoiceEngineStatus';
 
 interface Props {
   onOpenFullStudio?: () => void;
@@ -284,11 +285,12 @@ export const FloatingVoiceChanger: React.FC<Props> = ({ onOpenFullStudio }) => {
               </div>
             )}
 
+            <VoiceEngineStatus state={state} />
             {/* Power Toggle */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-xs font-semibold">Enabled</span>
-                {state.enabled && state.detectedInputHz ? (
+                {state.enabled && state.activeEngine !== 'neural' && state.detectedInputHz ? (
                   <span className="px-1.5 py-0.5 rounded-md bg-primary/15 text-primary text-[10px] font-mono tabular-nums truncate">
                     {state.detectedInputHz}→{state.outputPitchHz}Hz
                   </span>
@@ -368,7 +370,7 @@ export const FloatingVoiceChanger: React.FC<Props> = ({ onOpenFullStudio }) => {
                     >
                       <span>{preset.name}</span>
                       <span className="text-[10px] text-muted font-mono tabular-nums">
-                        {preset.pitchShift > 0 ? `+${preset.pitchShift}` : preset.pitchShift} st
+                        {preset.id === 'ai_female' ? 'AI · Local' : `${preset.pitchShift > 0 ? '+' : ''}${preset.pitchShift} st`}
                       </span>
                     </button>
                   ))}
@@ -376,6 +378,7 @@ export const FloatingVoiceChanger: React.FC<Props> = ({ onOpenFullStudio }) => {
               )}
             </div>
 
+            {state.selectedPresetId !== 'ai_female' && <>
             {/* Pitch Slider */}
             <div>
               <div className="flex items-center justify-between text-xs mb-1">
@@ -433,6 +436,7 @@ export const FloatingVoiceChanger: React.FC<Props> = ({ onOpenFullStudio }) => {
               />
             </div>
 
+            </>}
             {/* Listen Preview */}
             <button
               type="button"

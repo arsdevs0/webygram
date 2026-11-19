@@ -1,6 +1,7 @@
 export type VoiceGender = 'male' | 'female' | 'neutral';
 
 export type BuiltinPresetKey =
+  | 'ai_female'
   | 'natural_female'
   | 'soft_female'
   | 'bright_female'
@@ -47,6 +48,11 @@ export interface VoiceChangerState {
   lastError?: string | null;
   detectedInputHz?: number;
   outputPitchHz?: number;
+  activeEngine?: 'original' | 'dsp' | 'neural';
+  neuralStatus?: 'idle' | 'loading' | 'checking' | 'buffering' | 'active' | 'slow' | 'error';
+  neuralMessage?: string;
+  neuralP50Ms?: number;
+  neuralP95Ms?: number;
 }
 
 export interface AudioDeviceOption {

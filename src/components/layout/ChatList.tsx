@@ -1,7 +1,9 @@
+import { previewText } from '../../utils/messagePreview';
+import { MessageStatus } from '../chat/MessageStatus';
 import { NewMessageDialog } from './NewMessageDialog';
 import { TelegramNavigationMenu } from './TelegramNavigationMenu';
 import { useEscapeDismiss } from '../common/useEscapeDismiss';
-import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useRef } from 'react';
 import {
   Search,
   X,
@@ -125,11 +127,21 @@ export const ChatList: React.FC<Props> = React.memo(({
   const [showArchiveHeaderMenu, setShowArchiveHeaderMenu] = useState(false);
   const [hideArchivedAboveList, setHideArchivedAboveList] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(HIDE_ARCHIVED_KEY) === '1';
+      return localStorage.getItem(HIDE_ARCHIVED_KEY) !== '0';
     } catch {
-      return false;
+      return true;
     }
   });
+  const [archiveRevealed,setArchiveRevealed]=useState(false);
+  const [archivePull,setArchivePull]=useState(0);
+  const archiveTouch=useRef<{x:number;y:number;top:boolean}|null>(null);
+  const pullHandlers = {
+    onTouchStart:(e:React.TouchEvent<HTMLDivElement>)=>{const t=e.touches[0];archiveTouch.current={x:t.clientX,y:t.clientY,top:e.currentTarget.scrollTop<=0};},
+    onTouchMove:(e:React.TouchEvent<HTMLDivElement>)=>{const a=archiveTouch.current,t=e.touches[0];if(a?.top && hideArchivedAboveList && Math.abs(t.clientX-a.x)<35)setArchivePull(Math.max(0,Math.min(110,(t.clientY-a.y)*.6)));},
+    onTouchEnd:()=>{if(archivePull>=58){setArchiveRevealed(true);navigator.vibrate?.(8);}setArchivePull(0);archiveTouch.current=null;},
+    onTouchCancel:()=>{setArchivePull(0);archiveTouch.current=null;},
+    onScroll:(e:React.UIEvent<HTMLDivElement>)=>{if(e.currentTarget.scrollTop>85 && archiveRevealed)setArchiveRevealed(false);},
+  };
   const [showHamburgerDrawer, setShowHamburgerDrawer] = useState(false);
   const [drawerAccountExpanded, setDrawerAccountExpanded] = useState(false);
   const [copiedHandle, setCopiedHandle] = useState(false);
@@ -433,11 +445,7 @@ export const ChatList: React.FC<Props> = React.memo(({
             <div className="flex items-center gap-1 shrink-0 tabular-nums">
               {chat.lastMessage?.isOutgoing && !chat.isDeletedChat && (
                 <span className="shrink-0">
-                  {chat.lastMessage.isRead ? (
-                    <CheckCheck className="w-3.5 h-3.5 text-primary" />
-                  ) : (
-                    <Check className="w-3.5 h-3.5 text-muted dark:text-muted" />
-                  )}
+                  <MessageStatus pending={chat.lastMessage.isPending} read={chat.lastMessage.isRead} />
                 </span>
               )}
               {chat.isDeletedChat && (
@@ -461,7 +469,7 @@ export const ChatList: React.FC<Props> = React.memo(({
                   <span>{chat.draftText}</span>
                 </span>
               ) : (
-                <span className="truncate text-[12.5px]">
+                <span className="flex items-center min-w-0 gap-1 truncate text-[12.5px]">
                   {showGroupSender && (
                     <span className="text-ink dark:text-ink font-medium mr-1">
                       {chat.lastMessage?.senderName}:
@@ -470,7 +478,8 @@ export const ChatList: React.FC<Props> = React.memo(({
                   {chat.lastMessage?.isOutgoing && chat.type === 'group' && (
                     <span className="text-primary font-medium mr-1">You:</span>
                   )}
-                  <span>{chat.lastMessage?.text || 'No messages'}</span>
+                  {chat.lastMessage?.media && (chat.lastMessage.media.type==='photo' || chat.lastMessage.media.type==='video' || chat.lastMessage.media.type==='gif') && <img className="tg-chat-preview-thumb" src={chat.lastMessage.media.inlineThumb || chat.lastMessage.media.thumbnailUrl || chat.lastMessage.media.url} alt="" loading="lazy" decoding="async" />}
+                  <span>{chat.lastMessage ? previewText(chat.lastMessage.text,chat.lastMessage.media) : 'No messages'}</span>
                 </span>
               )}
             </div>
@@ -842,7 +851,8 @@ export const ChatList: React.FC<Props> = React.memo(({
 
           {/* Chat List Rows + Skeleton Shimmer + Global Search */}
           {(showSearchBar || searchQuery.trim()) && isConnected ? <SearchResults query={searchQuery} chats={chats} accountId={currentUser?.id || ''} onSelectChat={onSelectChat} onOpenPeer={peer => onOpenChatByLink?.(peer.username ? '@' + peer.username : peer.id)} onOpenMessage={onOpenSearchMessage} /> : (
-          <div className="tg-dialog-list tg-scroll-smooth flex-1 min-h-0 overflow-y-auto divide-y divide-outline dark:divide-outline/70 bg-surface dark:bg-surface">
+          <div {...pullHandlers} className="tg-dialog-list tg-scroll-smooth flex-1 min-h-0 overflow-y-auto divide-y divide-outline dark:divide-outline/70 bg-surface dark:bg-surface">
+            {hideArchivedAboveList && archivedChats.length>0 && !searchQuery && <button type="button" aria-label="Reveal archived chats" className="tg-archive-pull" style={{height:archivePull || 22}} onClick={()=>setArchiveRevealed(true)}><Archive size={15}/><span>{archivePull>=58?'Release for Archived Chats':'Pull down for Archived Chats'}</span></button>}
             {isConnected &&
               onOpenChatByLink &&
               /^(?:@|https?:\/\/(?:t\.me|telegram\.me)\/|t\.me\/|telegram\.me\/)/i.test(searchQuery.trim()) && (
@@ -908,7 +918,7 @@ export const ChatList: React.FC<Props> = React.memo(({
               <>
                 {/* Official Telegram Pinned Archived Chats Entry Row */}
                 {!searchQuery.trim() &&
-                  archivedChats.length > 0 && (
+                  archivedChats.length > 0 && (!hideArchivedAboveList || archiveRevealed) && (
                     <div
                       onClick={() => setIsArchiveViewOpen(true)}
                       onContextMenu={(e) => {

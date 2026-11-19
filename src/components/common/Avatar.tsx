@@ -71,9 +71,9 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
     const elementRef=useRef<HTMLDivElement|null>(null);
     const avatarSource = src || (id && /^-?\d+$/.test(id) ? '/api/tg/avatar/' + encodeURIComponent(id) : undefined);
     const near=useNearViewport(elementRef,Boolean(avatarSource)&&!isSaved);
-    const colors = ['#d8646d','#be6cbe','#7676d3','#4c8bcb','#47a5b8','#429d77','#bd813c'];
+    const colors = [['#ffad66','#f46c5b'],['#e69ce8','#ad68cf'],['#a4a0f5','#6f73d2'],['#7bc0ef','#478fdb'],['#74d8d5','#3aaab3'],['#8cda84','#53ac62'],['#ffce72','#e9a34b']];
     let hash=0; for (const c of id || title) hash=(hash*31+c.charCodeAt(0))|0;
-    const avatarColor=colors[Math.abs(hash)%colors.length];
+    const avatarColors=colors[Math.abs(hash)%colors.length];
     const sizeClass = SIZE_CLASSES[size];
     const paletteClass = getPaletteClass(id || title);
     const initials = getInitials(title);
@@ -81,9 +81,9 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
     if (isSaved) {
       return (
         <div
-          className={`relative shrink-0 rounded-full bg-primary text-white flex items-center justify-center ${sizeClass} ${className}`}
+          className={`relative shrink-0 rounded-full tg-saved-avatar flex items-center justify-center ${sizeClass} ${className}`}
         >
-          <Bookmark className={size === 'xs' ? 'w-3 h-3 fill-current' : 'w-5 h-5 fill-current'} />
+          <Bookmark className={size === 'xs' ? 'w-3 h-3' : 'w-[52%] h-[52%]'} strokeWidth={1.8} />
         </div>
       );
     }
@@ -97,7 +97,7 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
       <div ref={elementRef} className={`relative shrink-0 ${sizeClass} ${className}`}>
         {/* Monogram underneath as seamless fallback */}
         <div
-          style={{background:avatarColor,color:readableForeground(avatarColor)}} className={`w-full h-full rounded-full ${paletteClass} text-ink font-semibold flex items-center justify-center select-none border border-outline`}
+          style={{background:`linear-gradient(145deg,${avatarColors[0]},${avatarColors[1]})`,color:'#fff'}} className={`w-full h-full rounded-full ${paletteClass} text-ink font-semibold flex items-center justify-center select-none`}
         >
           <span>{initials}</span>
         </div>

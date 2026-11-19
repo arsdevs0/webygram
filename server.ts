@@ -1,3 +1,6 @@
+import { startMediaReceipt } from './src/utils/mediaReceipt';
+import { sendMediaSeenReceipt } from './src/server/mediaReceipts';
+import { registerMessageActions } from './src/server/messageActions';
 import { registerProfileActions } from './src/server/profileActions';
 import { registerNativeCallRoutes, serializeNativeCall } from './src/server/nativeCalls';
 import { registerContactRoutes } from './src/server/contacts';
@@ -127,6 +130,7 @@ interface CachedMessageMeta {
     senderName: string;
     text: string;
     mediaType?: string;
+    thumbnailUrl?: string;
   };
   topicId?: number;
   media?: {
@@ -147,6 +151,7 @@ interface CachedMessageMeta {
     expireSeconds?: number;
     isExpired?: boolean;
     viewed?: boolean;
+    expiresAt?: number;
   };
 }
 
@@ -213,6 +218,7 @@ let vaultIndex: Record<string, VaultEntry> = {};
 let deletedLogs: DeletedLogEntry[] = [];
 
 interface TargetGroupConfig {
+  autoSaveSources?: {mode:'all'|'single'|'multiple';chatIds:string[];enabled:boolean;includeDetails:boolean};
   id: string;
   title: string;
   username?: string;
@@ -247,6 +253,8 @@ interface DialogSnapshot {
   status?: string;
   memberCount?: number;
   lastMessage?: {
+    id?: string;
+    media?: unknown;
     text: string;
     timestamp: number;
     senderName?: string;
@@ -259,6 +267,7 @@ const stickerDocCache = new Map<string, Api.Document>();
 const docDownloadInFlight = new Map<string, Promise<Buffer | null>>();
 
 interface AutoForwardRuleServer {
+  includeDetails?: boolean;
   chatId: string;
   chatTitle: string;
   enabled: boolean;
@@ -554,7 +563,7 @@ async function runWithAvatarLimit<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function runWithMediaLimit<T>(fn: () => Promise<T>): Promise<T> {
-  if (activeMediaJobs >= 18) {
+  if (activeMediaJobs >= 6) {
     await new Promise<void>((resolve) => mediaQueue.push(resolve));
   }
   activeMediaJobs++;
@@ -1283,6 +1292,7 @@ function serializeMessage(
         senderName: cachedReply.senderName || 'Message',
         text: cachedReply.text || (cachedReply.media ? `${cachedReply.media.type === 'photo' ? 'Photo' : cachedReply.media.type === 'video' ? 'Video' : cachedReply.media.type === 'voice' ? 'Voice message' : cachedReply.media.type === 'sticker' ? 'Sticker' : cachedReply.media.fileName || 'Media'}` : 'Message'),
         mediaType: cachedReply.media?.type,
+        thumbnailUrl: cachedReply.media?.inlineThumb || cachedReply.media?.thumbnailUrl,
       };
     } else {
       const rawReply = rawMessageCache.get(getVaultKey(chatId, replyToMsgId));
@@ -1373,7 +1383,9 @@ function serializeMessage(
             isRoundVideo: Boolean(msg.media instanceof Api.MessageMediaDocument && msg.media.document instanceof Api.Document && msg.media.document.attributes.some(attr => attr instanceof Api.DocumentAttributeVideo && attr.roundMessage)),
             isDisappearing: mediaInfo.isDisappearing,
             expireSeconds: mediaInfo.expireSeconds,
-            isExpired: false,
+            viewed: existingCache?.media?.viewed ?? Boolean(!msg.mediaUnread),
+            expiresAt: existingCache?.media?.expiresAt,
+            isExpired: Boolean(existingCache?.media?.isExpired),
           };
         })()
       : existingCache?.media,
@@ -1402,6 +1414,15 @@ function serializeMessage(
   }
 
   return meta;
+}
+
+function recordMediaContentsRead(chatId: string, ids: number[], readAt = Date.now()) {
+  const cache = messageCacheByChat.get(chatId);
+  for (const id of ids) {
+    const message = cache?.get(id);
+    if (message?.media) cache!.set(id, { ...message, media: startMediaReceipt(message.media, readAt) });
+  }
+  broadcastWs({ type: 'MEDIA_CONTENTS_READ', chatId, messageIds: ids.map(String), readAt });
 }
 
 function storeMessageInCache(chatId: string, msgId: number, meta: CachedMessageMeta) {
@@ -1691,7 +1712,8 @@ async function sendStrictMediaOnlyToTarget(
   toPeer: Api.TypeEntityLike,
   targetChatId: string,
   msg: Api.Message,
-  info: StrictMediaCandidate
+  info: StrictMediaCandidate,
+  includeDetails = false
 ): Promise<'sent' | 'duplicate' | 'failed'> {
   if (wasAlreadySentToTarget(fromChatId, targetChatId, msg.id, info.fingerprint)) {
     return 'duplicate';
@@ -1713,8 +1735,8 @@ async function sendStrictMediaOnlyToTarget(
           id: [msg.id],
           randomId: [helpers.generateRandomLong(true)],
           toPeer: inputTo,
-          dropAuthor: true,
-          dropMediaCaptions: true,
+          dropAuthor: !includeDetails,
+          dropMediaCaptions: !includeDetails,
         })
       );
     };
@@ -1750,7 +1772,7 @@ async function sendStrictMediaOnlyToTarget(
         if (entry && fs.existsSync(entry.filePath)) {
           await tgClient.sendFile(inputTo, {
             file: entry.filePath,
-            caption: undefined,
+            caption: includeDetails ? ((msg.message || '')+'\nSource: '+chatTitle+' · Message '+msg.id+' · '+new Date(msg.date*1000).toISOString()).slice(0,1024) : undefined,
             supportsStreaming: info.kind === 'video',
           });
           markSentToTarget(fromChatId, targetChatId, msg.id, info.fingerprint);
@@ -1794,7 +1816,8 @@ async function forwardSingleMediaToTargetGroup(
       toPeer,
       savedTargetGroup.id,
       msg,
-      info
+      info,
+      rule.includeDetails
     );
 
     if (outcome === 'sent') {
@@ -1827,6 +1850,12 @@ function startAutoForwardBackgroundWatcher() {
   if (autoForwardIntervalTimer) clearInterval(autoForwardIntervalTimer);
   autoForwardIntervalTimer = setInterval(async () => {
     if (!client || !client.connected || !savedTargetGroup) return;
+    const scope=savedTargetGroup?.autoSaveSources;
+    if(scope?.enabled && scope.mode==='all')for(const chat of Object.values(dialogsSnapshot)) {
+      if(chat.id!==savedTargetGroup?.id && (chat.type==='group'||chat.type==='channel') && !autoForwardRules[chat.id]) {
+        autoForwardRules[chat.id]={chatId:chat.id,chatTitle:chat.title,enabled:true,includePhotos:true,includeVideos:true,includeFiles:false,includeDetails:scope.includeDetails,lastMsgId:Number(chat.lastMessage?.id)||0,forwardedCount:0};persistAutoForwardRules();
+      }
+    }
     const activeRules = Object.values(autoForwardRules).filter((r) => r.enabled);
     for (const rule of activeRules) {
       if (!client || !client.connected || !savedTargetGroup) break;
@@ -2022,6 +2051,15 @@ function attachRealtimeHandlers(tgClient: TelegramClient) {
           userId,
           status: isOnline ? 'online' : 'offline',
         });
+      } else if (update instanceof Api.UpdateReadMessagesContents) {
+        const chats = new Map<string, number[]>();
+        for (const id of update.messages) {
+          const chatId = msgIdToChatId.get(id);
+          if (chatId) chats.set(chatId, [...(chats.get(chatId) || []), id]);
+        }
+        for (const [chatId, ids] of chats) recordMediaContentsRead(chatId, ids);
+      } else if (update instanceof Api.UpdateChannelReadMessagesContents) {
+        recordMediaContentsRead('-100' + update.channelId.toString(), update.messages);
       } else if (update instanceof Api.UpdateReadHistoryOutbox) {
         const chatId = getPeerChatIdString(update.peer);
         if (chatId) {
@@ -3398,6 +3436,8 @@ async function main() {
           lastMessage: lastMsg
             ? {
                 text: lastText,
+                id: String(lastMsg.id),
+                media: serializeMessage(lastMsg, idStr).media,
                 timestamp: lastMsg.date ? lastMsg.date * 1000 : Date.now(),
                 senderName: lastSenderName,
                 isOutgoing: Boolean(lastMsg.out),
@@ -3659,6 +3699,7 @@ async function main() {
                     : hit.media.fileName || 'Media'
                   : 'Message'),
               mediaType: hit.media?.type,
+              thumbnailUrl: hit.media?.inlineThumb || hit.media?.thumbnailUrl,
             };
           } else {
             missingReplyIds.add(item.replyToMsgId);
@@ -3716,6 +3757,7 @@ async function main() {
                         : hit.media.fileName || 'Media'
                       : 'Message'),
                   mediaType: hit.media?.type,
+              thumbnailUrl: hit.media?.inlineThumb || hit.media?.thumbnailUrl,
                 };
               }
             }
@@ -3876,6 +3918,11 @@ async function main() {
       const fileName = req.body.fileName ? String(req.body.fileName) : 'media.bin';
       const mediaType = req.body.mediaType as 'photo' | 'video' | 'voice' | 'file' | undefined;
       const silent = Boolean(req.body.silent);
+      const spoiler = Boolean(req.body.spoiler);
+      const mediaWidth = Math.max(1,Math.min(8192,Number(req.body.width) || 1280));
+      const mediaHeight = Math.max(1,Math.min(8192,Number(req.body.height) || 720));
+      const videoDuration = Math.max(0,Number(req.body.duration) || 0);
+      if(ttlSeconds && (!['photo','video'].includes(String(mediaType)) || ttlSeconds>60))return res.status(400).json({error:'Timers require a photo or video and must be 1–60 seconds'});
 
       if (!chatId) {
         return res.status(400).json({ error: 'Target chat is missing.' });
@@ -3909,21 +3956,21 @@ async function main() {
                 mediaType === 'photo'
                   ? new Api.InputMediaUploadedPhoto({
                       file: uploaded,
-                      ttlSeconds,
+                      ttlSeconds, spoiler,
                     })
                   : new Api.InputMediaUploadedDocument({
                       file: uploaded,
                       mimeType: mimeType.startsWith('video/') ? mimeType : 'video/mp4',
                       attributes: [
                         new Api.DocumentAttributeVideo({
-                          duration: 0,
-                          w: 1280,
-                          h: 720,
+                          duration: videoDuration,
+                          w: mediaWidth,
+                          h: mediaHeight,
                           supportsStreaming: true,
                         }),
                         new Api.DocumentAttributeFilename({ fileName }),
                       ],
-                      ttlSeconds,
+                      ttlSeconds, spoiler,
                     });
 
               await tg.invoke(
@@ -3940,16 +3987,8 @@ async function main() {
 
               const latest = await tg.getMessages(peer, { limit: 1 });
               resultMsg = latest[0] as Api.Message | undefined;
-            } catch {
-              const customFile = new CustomFile(fileName, buffer.length, '', buffer);
-              resultMsg = await tg.sendFile(peer, {
-                file: customFile,
-                caption: text || undefined,
-                replyTo: effectiveReplyTo,
-                silent,
-                scheduleDate: scheduleDate || undefined,
-                supportsStreaming: mediaType === 'video',
-              });
+            } catch (error) {
+              throw new Error('Timed media was not sent. Telegram rejected the timer: '+getRawTgError(error));
             }
           } else if (mediaType === 'voice') {
             const requestedDuration = Math.max(1, Math.round(Number(req.body.duration || 1)));
@@ -4034,6 +4073,11 @@ async function main() {
                 ],
               });
             }
+          } else if (spoiler && (mediaType==='photo' || mediaType==='video')) {
+            const uploaded=await tg.uploadFile({file:new CustomFile(fileName,buffer.length,'',buffer),workers:2});
+            const media=mediaType==='photo'?new Api.InputMediaUploadedPhoto({file:uploaded,spoiler:true}):new Api.InputMediaUploadedDocument({file:uploaded,mimeType,spoiler:true,attributes:[new Api.DocumentAttributeVideo({duration:videoDuration,w:mediaWidth,h:mediaHeight,supportsStreaming:true}),new Api.DocumentAttributeFilename({fileName})]});
+            const updates=await tg.invoke(new Api.messages.SendMedia({peer,media,message:text,silent,randomId:helpers.generateRandomBigInt(),replyTo:effectiveReplyTo?new Api.InputReplyToMessage({replyToMsgId:effectiveReplyTo,topMsgId}):undefined}));
+            if('updates' in updates)for(const update of updates.updates)if((update instanceof Api.UpdateNewMessage || update instanceof Api.UpdateNewChannelMessage) && update.message instanceof Api.Message)resultMsg=update.message;
           } else {
             const customFile = new CustomFile(fileName, buffer.length, '', buffer);
             resultMsg = await tg.sendFile(peer, {
@@ -4243,6 +4287,7 @@ async function main() {
   });
 
   app.delete('/api/tg/target-group', (_req, res) => {
+    for(const rule of Object.values(autoForwardRules))rule.enabled=false;persistAutoForwardRules();
     savedTargetGroup = null;
     persistTargetGroup();
     return res.json({ ok: true });
@@ -4495,7 +4540,8 @@ async function main() {
           toPeer,
           resolvedTargetChatId,
           msg,
-          info
+          info,
+          Boolean(req.body.includeDetails)
         );
 
         if (outcome === 'sent') forwarded++;
@@ -4577,57 +4623,13 @@ async function main() {
       }
       const peer = await resolvePeer(client, chatId);
 
-      try {
-        if (peer instanceof Api.InputPeerChannel) {
-          await client.invoke(
-            new Api.channels.ReadMessageContents({
-              channel: peer,
-              id: [messageId],
-            })
-          );
-          await client.invoke(
-            new Api.channels.ReadHistory({
-              channel: peer,
-              maxId: messageId,
-            })
-          );
-        } else {
-          await client.invoke(
-            new Api.messages.ReadMessageContents({
-              id: [messageId],
-            })
-          );
-          await client.invoke(
-            new Api.messages.ReadHistory({
-              peer,
-              maxId: messageId,
-            })
-          );
-        }
-      } catch {
-        // fallback
-      }
-
-      try {
-        await client.markAsRead(peer, messageId);
-      } catch {
-        // ignore
-      }
-
+      const receipt = await sendMediaSeenReceipt(client, peer, messageId);
+      recordMediaContentsRead(chatId, [messageId], receipt.readAt);
       const cachedChat = messageCacheByChat.get(chatId);
-      if (cachedChat) {
-        const msg = cachedChat.get(messageId);
-        if (msg) {
-          msg.isRead = true;
-          if (msg.media) msg.media.viewed = true;
-          cachedChat.set(messageId, msg);
-        }
-      }
-      if (dialogsSnapshot[chatId]) {
-        dialogsSnapshot[chatId].unreadCount = 0;
-      }
-
-      return res.json({ ok: true });
+      const message = cachedChat?.get(messageId);
+      if (message && receipt.historyRead) cachedChat!.set(messageId, { ...message, isRead: true });
+      if (receipt.historyRead) broadcastWs({ type: 'READ_INBOX', chatId, maxId: messageId, stillUnreadCount: dialogsSnapshot[chatId]?.unreadCount || 0 });
+      return res.json({ ok: true, ...receipt, media: cachedChat?.get(messageId)?.media });
     } catch (err) {
       return res.status(400).json({ error: (err as Error).message || 'Failed to send seen receipt.' });
     }
@@ -6154,6 +6156,20 @@ async function main() {
     return res.json({ rules: autoForwardRules });
   });
 
+  app.post('/api/tg/auto-forward/sources',async(req,res)=>{
+    if(!client?.connected)return res.status(401).json({error:'Not authenticated'});
+    if(!savedTargetGroup)return res.status(400).json({error:'Set a target group first'});
+    const mode=req.body.mode,enabled=Boolean(req.body.enabled),includeDetails=req.body.includeDetails!==false;
+    if(!['all','single','multiple'].includes(mode)||!Array.isArray(req.body.chatIds)||req.body.chatIds.length>500)return res.status(400).json({error:'Invalid source selection'});
+    const available=Object.values(dialogsSnapshot).filter(c=>c.id!==savedTargetGroup!.id && (c.type==='group'||c.type==='channel') && !c.isDeletedChat);
+    const ids=new Set<string>(req.body.chatIds.map(String));const sources=mode==='all'?available:available.filter(c=>ids.has(c.id));
+    if(enabled&&!sources.length)return res.status(400).json({error:'Select at least one group or channel'});
+    if(mode==='single' && sources.length>1)return res.status(400).json({error:'Select a single source'});
+    for(const rule of Object.values(autoForwardRules))rule.enabled=false;
+    for(const chat of sources){const existing=autoForwardRules[chat.id];autoForwardRules[chat.id]={chatId:chat.id,chatTitle:chat.title,enabled,includePhotos:true,includeVideos:true,includeFiles:false,includeDetails,lastMsgId:existing?.lastMsgId || Number(chat.lastMessage?.id)||0,forwardedCount:existing?.forwardedCount||0,lastForwardedAt:existing?.lastForwardedAt};}
+    savedTargetGroup.autoSaveSources={mode,enabled,includeDetails,chatIds:sources.map(c=>c.id)};persistAutoForwardRules();persistTargetGroup();
+    return res.json({ok:true,enabled,count:sources.length});
+  });
   app.post('/api/tg/auto-forward/toggle', async (req, res) => {
     if (!client || !client.connected) {
       return res.status(401).json({ error: 'Not authenticated' });
@@ -7520,6 +7536,7 @@ async function main() {
   });
 
   registerContactRoutes(app, { client: () => client, cache: peerEntityCache });
+  registerMessageActions(app, { client: () => client, resolvePeer, messages: messageCacheByChat });
   registerProfileActions(app, { client: () => client, cache: peerEntityCache, resolveUser: async (active, id) => active.getInputEntity(await active.getEntity(await resolvePeer(active, id))) });
 
   app.post('/api/tg/contacts/:chatId/block', async (req, res) => {

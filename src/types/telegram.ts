@@ -195,6 +195,7 @@ export interface TelegramMessage {
     senderName: string;
     text: string;
     mediaType?: string;
+    thumbnailUrl?: string;
   };
   forwardFrom?: {
     name: string;
@@ -240,6 +241,9 @@ export interface TelegramChat {
   avatarUrl?: string;
   unreadCount: number;
   lastMessage?: {
+    id?: string;
+    media?: MediaAttachment;
+    isPending?: boolean;
     text: string;
     timestamp: number;
     senderName?: string;
@@ -369,3 +373,5 @@ export interface VaultItem {
   ttlSeconds?: number;
   savedAt: number;
 }
+
+export interface AttachmentUpload { fileDataUrl:string;fileName:string;mediaType:'photo'|'video'|'file';width?:number;height?:number;duration?:number;spoiler?:boolean;ttlSeconds?:number;silent?:boolean; }

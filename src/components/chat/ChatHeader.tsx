@@ -107,7 +107,7 @@ export const ChatHeader: React.FC<Props> = ({
       return chat.memberCount ? `${chat.memberCount.toLocaleString()} members` : 'Group';
     }
     if (chat.type === 'saved') {
-      return 'Cloud Vault & Saved Messages';
+      return 'Saved Messages';
     }
     if (chat.type === 'bot') {
       return 'Bot';
@@ -244,36 +244,8 @@ export const ChatHeader: React.FC<Props> = ({
             </button>
           )}
 
-          {(chat.type === 'group' || chat.type === 'channel') ? (
-            <button
-              type="button"
-              onClick={onStartVoiceCall || onOpenVoiceStudio}
-              className="px-2.5 py-1 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-emerald-700 dark:text-emerald-400 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
-              title="Join Group Voice Chat (VC)"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
-              <Phone className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Voice Chat</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onStartVoiceCall || onOpenVoiceStudio}
-              className="p-2 text-muted dark:text-muted hover:text-primary rounded-xl hover:bg-hover dark:hover:bg-hover cursor-pointer transition-colors"
-              title="Voice Call"
-            >
-              <Phone className="w-4.5 h-4.5" />
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={onStartVideoCall || onStartVoiceCall || onOpenVoiceStudio}
-            className="hidden sm:flex p-2 text-muted dark:text-muted hover:text-primary rounded-xl hover:bg-hover dark:hover:bg-hover cursor-pointer transition-colors"
-            title={chat.type === 'group' || chat.type === 'channel' ? 'Video Voice Chat' : 'Video Call'}
-          >
-            <Video className="w-4.5 h-4.5" />
-          </button>
+          {chat.type === 'user' && onStartVoiceCall && <button type="button" onClick={onStartVoiceCall} className="tg-icon-button" title="Voice Call" aria-label="Voice Call"><Phone size={22}/></button>}
+          {chat.type === 'user' && onStartVideoCall && <button type="button" onClick={onStartVideoCall} className="tg-icon-button hidden sm:flex" title="Video Call"><Video size={22}/></button>}
 
           <button
             type="button"
@@ -294,7 +266,7 @@ export const ChatHeader: React.FC<Props> = ({
           {onSearchChange && <button role="menuitem" onClick={() => { setShowActions(false); setIsSearchOpen(true); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover">Search messages</button>}
           <button role="menuitem" onClick={() => { setShowActions(false); onToggleInfoPanel(); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Chat info</button>
           {onOpenScheduled && <button role="menuitem" onClick={() => { setShowActions(false); onOpenScheduled(); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Scheduled messages</button>}
-          <button role="menuitem" onClick={() => { setShowActions(false); (onStartVideoCall || onStartVoiceCall || onOpenVoiceStudio)(); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Video call</button>
+          {chat.type === 'user' && onStartVideoCall && <button role="menuitem" onClick={() => { setShowActions(false); onStartVideoCall(); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Video call</button>}
           <button role="menuitem" onClick={() => { setShowActions(false); onOpenVoiceStudio(); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Voice changer</button>
           {chat.unreadCount > 0 && <button role="menuitem" onClick={() => { setShowActions(false); void telegramService.markChatAsRead(chat.id, true); }} className="w-full min-h-12 px-3 text-left rounded-xl hover:bg-hover dark:hover:bg-hover">Mark as read</button>}
         </div>

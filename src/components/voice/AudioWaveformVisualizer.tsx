@@ -24,9 +24,14 @@ export const AudioWaveformVisualizer: React.FC<Props> = ({
     if (!ctx) return;
 
     let isRunning = true;
+    let lastFrame = 0;
+    let dataArray = new Uint8Array(0);
 
-    const render = () => {
+    const render = (now = 0) => {
       if (!isRunning) return;
+      animFrameRef.current = requestAnimationFrame(render);
+      if (document.hidden || now - lastFrame < 50) return;
+      lastFrame = now;
 
       const analyser = voiceChanger.analyserNode;
       const width = canvas.width;
@@ -41,13 +46,12 @@ export const AudioWaveformVisualizer: React.FC<Props> = ({
         ctx.moveTo(0, h / 2);
         ctx.lineTo(width, h / 2);
         ctx.stroke();
-        animFrameRef.current = requestAnimationFrame(render);
         return;
       }
 
       if (mode === 'frequency') {
         const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
+        if (dataArray.length !== bufferLength) dataArray = new Uint8Array(bufferLength);
         analyser.getByteFrequencyData(dataArray);
 
         const barCount = 36;
@@ -68,7 +72,7 @@ export const AudioWaveformVisualizer: React.FC<Props> = ({
         }
       } else {
         const bufferLength = analyser.fftSize;
-        const dataArray = new Uint8Array(bufferLength);
+        if (dataArray.length !== bufferLength) dataArray = new Uint8Array(bufferLength);
         analyser.getByteTimeDomainData(dataArray);
 
         ctx.lineWidth = 2;
@@ -95,7 +99,6 @@ export const AudioWaveformVisualizer: React.FC<Props> = ({
         ctx.stroke();
       }
 
-      animFrameRef.current = requestAnimationFrame(render);
     };
 
     render();
