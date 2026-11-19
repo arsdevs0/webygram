@@ -57,8 +57,11 @@
   border-radius: 9999px;
 }
 
+@media (hover: hover) and (pointer: fine){
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(42, 171, 238, 0.5);
+}
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -197,11 +200,14 @@ html.dark .dark\:bg-\[\#182533\] {
   background-color: var(--tg-accent) !important;
 }
 
+@media (hover: hover) and (pointer: fine){
+
 .hover\:bg-\[\#229ED9\]:hover,
 .hover\:bg-\[\#1677E6\]:hover,
 .hover\:bg-\[\#2AABEE\]:hover,
 .hover\:bg-\[\#1F8BFF\]:hover {
   background-color: var(--tg-accent-hover) !important;
+}
 }
 
 .text-\[\#2AABEE\],

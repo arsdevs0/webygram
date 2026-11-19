@@ -38,11 +38,17 @@ service.getAuthSession = () => ({ isConnected: !new URLSearchParams(location.sea
 service.authSession = service.getAuthSession();
 service.getChats = () => chats;
 service.getMessages = (id: string) => messages[id] || [];
-service.loadMessages = async () => [];
+(window as any).__chatLoads = [];
+service.loadMessages = async (id: string) => {
+  (window as any).__chatLoads.push({ id, time: performance.now() });
+  if (new URLSearchParams(location.search).has('delayMessages')) await new Promise(resolve => setTimeout(resolve, 1200));
+  return messages[id] || [];
+};
 service.getIsLoadingDialogs = () => false;
 service.getPinnedMessages = async () => [];
 service.getChatDetails = async (id: string) => ({ id, title: id, canPostMessages: true, canSendMedia: true, members: [], isCreator: false, isAdmin: false, isProtected: false, memberCount: 1 });
 service.getTargetGroup = () => ({ id: 'bob', title: 'Bob group', type: 'group', link: '', setAt: Date.now() });
 service.markChatAsRead = async () => {};
 service.editMessage = async () => { throw new Error('Edit rejected for test'); };
-createRoot(document.getElementById('root')!).render(<App />);
+(window as any).__appCommits = 0;
+createRoot(document.getElementById('root')!).render(<React.Profiler id="app" onRender={() => (window as any).__appCommits++}><App /></React.Profiler>);

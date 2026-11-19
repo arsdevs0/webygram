@@ -19,14 +19,16 @@ html[data-interface="flow"] .tg-app :where(button.bg-primary) { border-radius: 9
 .tg-screen-header h1 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -.4px; }
 .tg-icon-button { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; flex-shrink: 0; }
 .tg-icon-button svg { width: 22px; height: 22px; }
-.tg-icon-button:hover { background: var(--tg-hover); }
+@media (hover: hover) and (pointer: fine) {
+.tg-icon-button:hover { background: var(--tg-hover); } }
 .tg-search-field { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; border-radius: 28px; color: var(--tg-muted); background: var(--tg-bg-elevated); }
 .tg-search-field input { width: 100%; min-width: 0; padding: 12px 0; color: var(--tg-text); outline: none; background: transparent; }
 .tg-profile-card { display: flex; align-items: center; gap: 12px; padding: 20px 16px; background: var(--tg-bg-panel); border-radius: 24px; }
 .tg-section-label { margin: 0 12px 10px; color: var(--tg-muted); font-size: 13px; font-weight: 600; }
 .tg-settings-group { display: flex; flex-direction: column; gap: 2px; border-radius: 24px; overflow: hidden; }
 .tg-settings-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 76px; padding: 14px 16px; background: var(--tg-bg-panel); color: var(--tg-text); text-align: left; }
-.tg-settings-row:hover { background: var(--tg-hover); }
+@media (hover: hover) and (pointer: fine) {
+.tg-settings-row:hover { background: var(--tg-hover); } }
 .tg-row-icon { width: 42px; height: 42px; display: grid; place-items: center; flex-shrink: 0; background: var(--tg-bg-elevated); border-radius: 50%; color: var(--tg-text); }
 
 .tg-mobile-nav { padding-top: 8px; background: var(--tg-surface-low); color: var(--tg-muted); border-top: 1px solid color-mix(in srgb, var(--tg-border) 45%, transparent); }
@@ -38,8 +40,8 @@ html[data-interface="flow"] .tg-app :where(button.bg-primary) { border-radius: 9
 .tg-folder-tabs > button { border: 1px solid var(--tg-border); border-radius: 999px; min-height: 38px; padding: 6px 14px; font-weight: 500; }
 .tg-folder-tabs > button[aria-pressed="true"] { background: var(--tg-bg-elevated); border-color: transparent; color: var(--tg-text); }
 .tg-chat-row { min-height: 78px; padding-inline: 16px; background: var(--tg-bg-main); border: 0; }
-.tg-chat-row:hover { background: var(--tg-hover); }
-.tg-chat-row[aria-current="true"] { background: var(--tg-primary-container); }
+@media (hover: hover) and (pointer: fine) {
+.tg-chat-row:hover { background: var(--tg-hover); } }
 .tg-chat-row .text-\[14px\] { font-size: 15px; font-weight: 500; }
 .tg-chat-row .text-\[12\.5px\] { font-size: 13px; }
 .tg-chat-header { background: var(--tg-bg-main); border-color: color-mix(in srgb, var(--tg-border) 40%, transparent); }
@@ -96,7 +98,6 @@ html[data-navigation="telegram"] .tg-folder-tabs { gap: 0; background: var(--tg-
 html[data-navigation="telegram"] .tg-folder-tabs > button { border: 0; border-radius: 0; padding-block: 12px; background: transparent; }
 html[data-navigation="telegram"] .tg-folder-tabs > button[aria-pressed="true"] { color: var(--tg-primary-text); box-shadow: inset 0 -3px var(--tg-accent); }
 html[data-interface="telegram"] .tg-chat-row { min-height: 72px; background: var(--tg-bg-panel); }
-html[data-interface="telegram"] .tg-chat-row[aria-current="true"] { background: var(--tg-primary-container); }
 html[data-interface="telegram"] .tg-settings-group { gap: 0; border-radius: 16px; }
 html[data-interface="telegram"] .tg-settings-row { min-height: 68px; border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 50%, transparent); }
 html[data-interface="telegram"] .tg-row-icon { border-radius: 10px; color: var(--tg-primary-text); background: var(--tg-primary-container); }
@@ -129,9 +130,11 @@ html[data-interface="telegram"] .tg-chat-row .text-\[12\.5px\] { font-size: 14px
 .tg-call[data-video="true"] { --tg-bg-panel: #141414; --tg-bg-elevated: #303030; --tg-text: #ffffff; --tg-muted: #dddddd; --tg-border: #444444; }
 .tg-call { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 .bg-primary .text-white\/80 { color: var(--tg-on-primary); opacity: .85; }
-.tg-app .hover\:bg-primary:hover { color: var(--tg-on-primary); }
+@media (hover: hover) and (pointer: fine) {
+.tg-app .hover\:bg-primary:hover { color: var(--tg-on-primary); } }
 .tg-app .tg-search-result { display: flex; align-items: center; gap: 12px; padding: 14px 16px; min-height: 76px; width: 100%; text-align: left; }
-.tg-app .tg-search-result:hover { background: var(--tg-hover); }
+@media (hover: hover) and (pointer: fine) {
+.tg-app .tg-search-result:hover { background: var(--tg-hover); } }
 .tg-app .tg-search-highlight { background: var(--tg-primary-container); outline: 2px solid var(--tg-accent); outline-offset: 3px; border-radius: 16px; }
 .tg-timeline[hidden] { display: none; }
 /* Telegram Web navigation: chat sidebar, inline search and a compact main menu. */
@@ -145,7 +148,7 @@ html[data-navigation="telegram"] .tg-desktop-nav { display: none; }
 html[data-navigation="telegram"] .tg-folder-tabs { padding-inline: 12px; }
 html[data-navigation="telegram"] .tg-folder-tabs > button { font-size: 14px; min-height: 48px; padding-inline: 14px; }
 html[data-navigation="telegram"] .tg-chat-row { border: 0; }
-html[data-navigation="telegram"] .tg-chat-row[aria-current="true"] { background: var(--tg-accent); color: var(--tg-on-primary); }
+html[data-navigation="telegram"] .tg-chat-row[aria-current="true"] { color: var(--tg-on-primary); }
 html[data-navigation="telegram"] .tg-chat-row[aria-current="true"] :is(.text-muted, .text-ink, .text-primary) { color: inherit; }
 html[data-navigation="telegram"] .tg-sidebar .divide-y > * { border: 0; }
 html[data-navigation="telegram"] .tg-sidebar .tg-new-message-fab { bottom: max(20px, env(safe-area-inset-bottom)); }
@@ -156,7 +159,8 @@ html[data-navigation="telegram"] .tg-sidebar .tg-new-message-fab { bottom: max(2
 .tg-menu-account > .tg-icon-button svg { width: 20px; height: 20px; }
 .tg-menu-section { padding: 6px 0; border-bottom: 1px solid var(--tg-border); }
 .tg-menu-row { display: flex; align-items: center; gap: 22px; width: 100%; min-height: 48px; padding: 10px 22px; text-align: left; color: var(--tg-text); font-size: 15px; font-weight: 500; cursor: pointer; }
-.tg-menu-row:hover { background: var(--tg-hover); }
+@media (hover: hover) and (pointer: fine) {
+.tg-menu-row:hover { background: var(--tg-hover); } }
 .tg-menu-row > svg { width: 22px; height: 22px; flex-shrink: 0; color: var(--tg-muted); }
 .tg-menu-switch { width: 34px; height: 16px; border-radius: 16px; background: var(--tg-muted); opacity: .7; position: relative; }
 .tg-menu-switch > span { position: absolute; top: -2px; left: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--tg-bg-panel); box-shadow: 0 0 0 2px var(--tg-muted); transition: transform 140ms ease; }

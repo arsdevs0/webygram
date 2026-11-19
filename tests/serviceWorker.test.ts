@@ -6,17 +6,19 @@ import { readFileSync } from 'node:fs';
 function worker(client: any, nativeFetch: any = fetch, entries = new Map<string, Response>()) {
   const handlers: Record<string, (event: any) => void> = {};
   const self = { location: new URL('https://app.test/'), addEventListener: (name: string, handler: any) => handlers[name] = handler,
-    clients: { get: async () => client, matchAll: async () => client ? [client] : [] } };
+    skipWaiting: async () => {}, clients: { claim: async () => {}, get: async () => client, matchAll: async () => client ? [client] : [] } };
   vm.runInNewContext(readFileSync(new URL('../public/telegram-sw.js', import.meta.url), 'utf8'), {
-    self, URL, Response, ReadableStream, MessageChannel, setTimeout, clearTimeout, fetch: nativeFetch,
+    self, URL, Request, Response, ReadableStream, MessageChannel, setTimeout, clearTimeout, fetch: nativeFetch,
     caches: { match: async (key: Request | string) => entries.get(typeof key === 'string' ? key : key.url)?.clone(),
-      open: async () => ({ put: async (key: Request | string, value: Response) => entries.set(typeof key === 'string' ? key : key.url, value.clone()) }) },
+      keys: async () => [], delete: async () => true,
+      open: async () => ({ match: async (key: Request | string) => entries.get(typeof key === 'string' ? key : key.url)?.clone(), put: async (key: Request | string, value: Response) => entries.set(typeof key === 'string' ? key : key.url, value.clone()) }) },
   });
-  return (request: Request): Promise<Response> | undefined => {
+  const relay = (request: Request): Promise<Response> | undefined => {
     let response: Promise<Response> | undefined;
     handlers.fetch({ request, clientId: 'open-tab', respondWith: (value: Promise<Response>) => response = value });
     return response;
   };
+  return Object.assign(relay, { lifecycle: async (name: string) => { let pending: Promise<void> | undefined; handlers[name]({ waitUntil: (value: Promise<void>) => pending = value }); await pending; } });
 }
 
 test('service worker relays ranges and streams every media chunk from the open page', async () => {
@@ -58,4 +60,17 @@ test('service worker reports closed app and supports switching back to Node mode
   const relay = worker({ postMessage: (_message: any, [port]: MessagePort[]) => { port.postMessage({ network: true }); port.close(); } },
     async () => new Response('node mode'));
   assert.equal(await (await relay(new Request('https://app.test/api/test')))!.text(), 'node mode');
+});
+
+test('first installation downloads the launch page and both mandatory icon sizes', async () => {
+ const requested:string[]=[];const entries=new Map<string,Response>();
+ const relay=worker(null,async (request:Request)=>{requested.push(new URL(request.url).pathname);return new Response('shell');},entries);
+ await relay.lifecycle('install');assert.ok(requested.includes('/'));assert.ok(requested.includes('/icons/icon-192.png'));assert.ok(requested.includes('/icons/icon-512.png'));assert.ok(entries.has('/'));
+ assert.ok(!requested.some(path=>path.startsWith('/api/')||path.endsWith('.onnx')));
+});
+test('install metadata refreshes online and falls back to the new copy offline', async () => {
+ let offline=false,version=0;const relay=worker(null,async()=>{if(offline)throw Error('offline');return new Response(String(++version));});
+ const request=new Request('https://app.test/manifest.webmanifest');
+ assert.equal(await (await relay(request))!.text(),'1');assert.equal(await (await relay(request))!.text(),'2');offline=true;
+ assert.equal(await (await relay(request))!.text(),'2');
 });

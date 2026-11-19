@@ -201,7 +201,7 @@ export default function App() {
   );
 
   const backToChats = useCallback(() => {
-    setActiveView('chats'); setActiveNavItem('chats'); setActiveBottomTab('chats'); setShowInfoPanel(false);
+    setActiveChatId(null); setActiveView('chats'); setActiveNavItem('chats'); setActiveBottomTab('chats'); setShowInfoPanel(false);
   }, []);
   useEscapeDismiss(isConfirmCallOpen, () => { setIsConfirmCallOpen(false); setCallTargetChat(null); });
   useAppBack(activeView !== 'chats' || selectionMode || Boolean(chatSearchQuery) || Boolean(editingMessage) || Boolean(replyingTo) || activeTopicId !== null, () => {
@@ -507,7 +507,6 @@ export default function App() {
     } else if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setShowInfoPanel(false);
     }
-    void telegramService.loadMessages(chatId, 0);
   }, []);
 
   const handleOpenChatByLink = useCallback(

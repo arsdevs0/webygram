@@ -1,3 +1,4 @@
+import { useArchivePull } from './useArchivePull';
 import { previewText } from '../../utils/messagePreview';
 import { MessageStatus } from '../chat/MessageStatus';
 import { NewMessageDialog } from './NewMessageDialog';
@@ -133,14 +134,14 @@ export const ChatList: React.FC<Props> = React.memo(({
     }
   });
   const [archiveRevealed,setArchiveRevealed]=useState(false);
-  const [archivePull,setArchivePull]=useState(0);
-  const archiveTouch=useRef<{x:number;y:number;top:boolean}|null>(null);
-  const pullHandlers = {
-    onTouchStart:(e:React.TouchEvent<HTMLDivElement>)=>{const t=e.touches[0];archiveTouch.current={x:t.clientX,y:t.clientY,top:e.currentTarget.scrollTop<=0};},
-    onTouchMove:(e:React.TouchEvent<HTMLDivElement>)=>{const a=archiveTouch.current,t=e.touches[0];if(a?.top && hideArchivedAboveList && Math.abs(t.clientX-a.x)<35)setArchivePull(Math.max(0,Math.min(110,(t.clientY-a.y)*.6)));},
-    onTouchEnd:()=>{if(archivePull>=58){setArchiveRevealed(true);navigator.vibrate?.(8);}setArchivePull(0);archiveTouch.current=null;},
-    onTouchCancel:()=>{setArchivePull(0);archiveTouch.current=null;},
-    onScroll:(e:React.UIEvent<HTMLDivElement>)=>{if(e.currentTarget.scrollTop>85 && archiveRevealed)setArchiveRevealed(false);},
+  const archiveViewport = useRef<HTMLDivElement>(null);
+  const archiveIndicator = useRef<HTMLButtonElement>(null);
+  const archiveAvailable = chats.some(chat => chat.isArchived);
+  useArchivePull(archiveViewport, archiveIndicator,
+    hideArchivedAboveList && archiveAvailable && !archiveRevealed && !searchQuery,
+    () => setArchiveRevealed(true));
+  const onArchiveScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (event.currentTarget.scrollTop > 85 && archiveRevealed) setArchiveRevealed(false);
   };
   const [showHamburgerDrawer, setShowHamburgerDrawer] = useState(false);
   const [drawerAccountExpanded, setDrawerAccountExpanded] = useState(false);
@@ -414,9 +415,7 @@ export const ChatList: React.FC<Props> = React.memo(({
         className={`tg-chat-row group relative px-3.5 py-2.5 flex items-center gap-3 cursor-pointer transition-colors ${
           chat.isDeletedChat ? 'opacity-70' : ''
         } ${
-          isSelected
-            ? 'bg-blue-50 dark:bg-elevated/55'
-            : 'hover:bg-hover dark:hover:bg-hover'
+          'hover:bg-hover dark:hover:bg-hover'
         }`}
       >
         {/* Avatar */}
@@ -851,8 +850,8 @@ export const ChatList: React.FC<Props> = React.memo(({
 
           {/* Chat List Rows + Skeleton Shimmer + Global Search */}
           {(showSearchBar || searchQuery.trim()) && isConnected ? <SearchResults query={searchQuery} chats={chats} accountId={currentUser?.id || ''} onSelectChat={onSelectChat} onOpenPeer={peer => onOpenChatByLink?.(peer.username ? '@' + peer.username : peer.id)} onOpenMessage={onOpenSearchMessage} /> : (
-          <div {...pullHandlers} className="tg-dialog-list tg-scroll-smooth flex-1 min-h-0 overflow-y-auto divide-y divide-outline dark:divide-outline/70 bg-surface dark:bg-surface">
-            {hideArchivedAboveList && archivedChats.length>0 && !searchQuery && <button type="button" aria-label="Reveal archived chats" className="tg-archive-pull" style={{height:archivePull || 22}} onClick={()=>setArchiveRevealed(true)}><Archive size={15}/><span>{archivePull>=58?'Release for Archived Chats':'Pull down for Archived Chats'}</span></button>}
+          <div ref={archiveViewport} onScroll={onArchiveScroll} className="tg-dialog-list tg-scroll-smooth flex-1 min-h-0 overflow-y-auto divide-y divide-outline dark:divide-outline/70 bg-surface dark:bg-surface">
+            {hideArchivedAboveList && archivedChats.length>0 && !searchQuery && <button type="button" aria-label="Reveal archived chats" ref={archiveIndicator} data-revealed={archiveRevealed} inert={archiveRevealed} className="tg-archive-pull" onClick={()=>setArchiveRevealed(true)}><Archive size={15}/><span>Pull down for Archived Chats</span></button>}
             {isConnected &&
               onOpenChatByLink &&
               /^(?:@|https?:\/\/(?:t\.me|telegram\.me)\/|t\.me\/|telegram\.me\/)/i.test(searchQuery.trim()) && (
@@ -918,7 +917,9 @@ export const ChatList: React.FC<Props> = React.memo(({
               <>
                 {/* Official Telegram Pinned Archived Chats Entry Row */}
                 {!searchQuery.trim() &&
-                  archivedChats.length > 0 && (!hideArchivedAboveList || archiveRevealed) && (
+                  archivedChats.length > 0 && (
+                    <div className="tg-archive-entry-shell" data-menu-open={showArchiveHeaderMenu} data-visible={!hideArchivedAboveList || archiveRevealed} inert={hideArchivedAboveList && !archiveRevealed}>
+                    <div className="tg-archive-entry-clip">
                     <div
                       onClick={() => setIsArchiveViewOpen(true)}
                       onContextMenu={(e) => {
@@ -1011,6 +1012,8 @@ export const ChatList: React.FC<Props> = React.memo(({
 
                         </div>
                       )}
+                    </div>
+                    </div>
                     </div>
                   )}
 

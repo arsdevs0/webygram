@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <script>
+      // Protect Back while the JavaScript bundle and Telegram session are loading.
+      (function () {
+        var marker = '__webygramBack';
+        function arm() { if (!history.state || !history.state[marker]) history.pushState(Object.assign({}, history.state, { __webygramBack: true }), ''); }
+        function back() { arm(); }
+        function traverse(event) { if (event.navigationType === 'traverse' && !event.destination.sameDocument && event.cancelable) event.preventDefault(); }
+        arm(); window.addEventListener('popstate', back);
+        if (window.navigation) window.navigation.addEventListener('navigate', traverse);
+        window.__webygramBootBackCleanup = function () { window.removeEventListener('popstate', back); if (window.navigation) window.navigation.removeEventListener('navigate', traverse); delete window.__webygramBootBackCleanup; };
+      })();
       (function () {
         try {
           var originalFetch = window.fetch ? window.fetch.bind(window) : undefined;

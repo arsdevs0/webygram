@@ -10,6 +10,8 @@ function harness(initial: any = {}) {
     listen(type, callback) { callbacks.set(type, callback); return () => { callbacks.delete(type); }; }, defer(callback) { pending.push(callback); }, now: () => now });
   return { nav, advance: (milliseconds: number) => { now += milliseconds; }, pushes: () => pushes, backs: () => backs,
     pop(next = {}) { state = next; callbacks.get('popstate')?.({ state }); while (pending.length) pending.shift()!(); },
+    interact() { callbacks.get('pointerdown')?.({}); },
+    key(key: string) { callbacks.get('keydown')?.({ key }); },
     escape() { let prevented = false, stopped = false; callbacks.get('keydown')?.({ key: 'Escape', defaultPrevented: false, preventDefault() { prevented = true; }, stopImmediatePropagation() { stopped = true; } }); return { prevented, stopped }; } };
 }
 test('Back closes a nested panel before the chat, then leaves the root unguarded', () => {
@@ -57,4 +59,32 @@ test('rapid and repeated root Back always rearms without exiting', () => {
 test('closing a chat does not count as the first exit Back', () => {
  const h=harness();let hints=0;h.nav.setExitProtection(()=>hints++);h.nav.setFallback(()=>h.nav.setFallback());
  h.pop();h.advance(50);h.pop();assert.equal(hints,1);assert.equal(h.backs(),0);
+});
+
+// Match the application's actual four-tap exit policy, not just the utility default.
+test('four-tap protection survives double Back and separated presses', () => {
+ const h=harness();h.nav.setExitProtection(()=>{}, {rapidExitTaps:4});
+ for(const delay of [0,80,400,80,400,80,400]){h.advance(delay);h.pop();}
+ assert.equal(h.backs(),0);
+});
+test('only four uninterrupted rapid root Back presses exit', () => {
+ const h=harness();const hints:number[]=[];h.nav.setExitProtection(n=>hints.push(n!), {rapidExitTaps:4});
+ for(let i=0;i<4;i++){h.advance(100);h.pop();}
+ assert.equal(h.backs(),1);assert.deepEqual(hints,[3,2,1]);
+ h.pop();assert.equal(h.backs(),1);
+});
+test('in-app touch, typing and opening a panel reset the rapid exit sequence', () => {
+ for(const action of ['touch','key','panel']){
+  const h=harness();h.nav.setExitProtection(()=>{}, {rapidExitTaps:4});h.pop();h.advance(80);h.pop();
+  if(action==='touch')h.interact();else if(action==='key')h.key('a');else {const remove=h.nav.add(()=>{});remove();}
+  h.advance(80);h.pop();h.advance(80);h.pop();assert.equal(h.backs(),0,action);
+ }
+});
+
+test('cancellable external traversal closes a panel before the chat', () => {
+ const h=harness();h.nav.setExitProtection(()=>{}, {rapidExitTaps:4});let closed='';
+ h.nav.setFallback(()=>{closed+='chat';h.nav.setFallback();});const remove=h.nav.add(()=>{closed+='panel';remove();});
+ assert.equal(h.nav.handleExternalBack(),true);assert.equal(closed,'panel');assert.equal(h.nav.handleExternalBack(),true);assert.equal(closed,'panelchat');
+ for(let i=0;i<3;i++){h.advance(100);assert.equal(h.nav.handleExternalBack(),true);}
+ h.advance(100);assert.equal(h.nav.handleExternalBack(),false);assert.equal(h.backs(),0);
 });
